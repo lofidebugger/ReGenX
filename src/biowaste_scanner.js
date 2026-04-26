@@ -306,7 +306,7 @@ const BioScanner = (() => {
         if (analyBtn) analyBtn.disabled = false;
     }
 
-    // ── Smart Vision Simulation (Robust Color-Ratio Analysis) ────────────────
+    // ── Smart Vision Simulation (Fully Parametric Analysis Engine) ────────────
     function __smartSimulation() {
         const canvas = document.getElementById('bws-canvas');
         const ctx = canvas.getContext('2d');
@@ -324,55 +324,56 @@ const BioScanner = (() => {
         const count = pixels.length / step;
         r /= count; g /= count; b /= count; br /= count; v /= count;
 
-        // 1. Calculate Ratios (Relative Balance)
-        const gRatio = g / (r + b + 1);
-        const rRatio = r / (g + b + 1);
-        const bRatio = b / (r + g + 1);
-
-        // 2. Identify "Artificial" signals (High Blue or High Contrast Patterns)
-        const isHighlyArtificial = (bRatio > 0.45) || (v > 100); 
-        const isSmoothSynthetic = (br > 220 && v < 30); // Very bright, very smooth (white plastic)
-
-        // 3. Identify Organic signals (Earthy/Green dominance)
-        const isOrganicDominant = (gRatio > 0.35) || (rRatio > 0.38 && gRatio > 0.3); // Greens or Oranges/Browns
+        // 1. Precise Ratio Calculations
+        const total = r + g + b + 1;
+        const gRatio = g / total;
+        const rRatio = r / total;
+        const bRatio = b / total;
         
-        // 4. Add minor variance for realism
-        const jitter = (Math.sin(v) * 5); 
-        let score = 85 + jitter; 
+        // 2. Parametric Score Components
+        // Base score starts at 50, then we add/subtract based on parameters
+        let calcScore = 65; 
+        
+        // Organic Bonus: Up to +35 based on green/red balance
+        const organicSignal = Math.max(0, (gRatio + rRatio * 0.5) - bRatio);
+        calcScore += (organicSignal * 60);
+        
+        // Contamination Penalty: Up to -40 based on artificial signals (Blue/Contrast)
+        const artSignal = (bRatio > 0.35 ? bRatio * 50 : 0) + (v > 80 ? (v-80)/2 : 0);
+        calcScore -= artSignal;
 
-        // BIAS: Assume Organic unless proven otherwise
-        if (!isHighlyArtificial && !isSmoothSynthetic) {
-            // ORGANIC PATH
-            const name = (gRatio > rRatio) ? 'Leafy Organic Waste' : 'Food & Veg Scraps';
-            detectedItems = [{ name, category: 'Organic', isContaminant: false, emoji: '🍃' }];
-            score = (gRatio > 0.4) ? 98 : 92;
-        } else if (isOrganicDominant) {
-            // MIXED PATH (Looks organic but has plastic signals)
-            detectedItems = [
-                { name: 'Organic Waste', category: 'Organic', isContaminant: false, emoji: '🍂' },
-                { name: 'Plastic Contaminant', category: 'Plastic', isContaminant: true, emoji: '🥤' }
-            ];
-            score = 62;
-        } else {
-            // INORGANIC PATH (Strong signals of plastic/metal)
-            detectedItems = [
-                { name: 'Non-Organic Material', category: 'Inorganic', isContaminant: true, emoji: '📦' },
-                { name: 'Dry Waste', category: 'Recyclable', isContaminant: true, emoji: '♻️' }
-            ];
-            score = 28;
+        // Smoothness Check: Smooth bright white is usually plastic
+        if (br > 210 && v < 25) calcScore -= 30;
+
+        // Final Clamp & Jitter
+        const finalScore = Math.max(5, Math.min(100, Math.round(calcScore + (Math.random() * 2))));
+
+        // 3. Dynamic Item Generation based on Parameters
+        let detectedItems = [];
+        if (gRatio > 0.38) detectedItems.push({ name: 'Fresh Green Waste', category: 'Organic', isContaminant: false, emoji: '🍃' });
+        else if (rRatio > 0.4) detectedItems.push({ name: 'Decomposing Organic', category: 'Organic', isContaminant: false, emoji: '🍂' });
+        else detectedItems.push({ name: 'Mixed Food Scraps', category: 'Organic', isContaminant: false, emoji: '🍲' });
+
+        if (bRatio > 0.35 || v > 110) {
+            detectedItems.push({ name: 'Saturated Packaging', category: 'Inorganic', isContaminant: true, emoji: '🥤' });
+        }
+        if (br > 220) {
+            detectedItems.push({ name: 'Reflective Material', category: 'Inorganic', isContaminant: true, emoji: '📦' });
         }
 
-        const grade = score > 90 ? 'Excellent' : score > 75 ? 'Good' : score > 50 ? 'Fair' : 'Poor';
+        // 4. Suitability Mapping
+        const suitability = finalScore > 85 ? 'Ideal' : finalScore > 65 ? 'Acceptable' : finalScore > 40 ? 'Marginal' : 'Reject';
+        const organicPct = Math.max(0, Math.min(100, Math.round(finalScore * 1.05)));
 
         return {
-            segregationScore: score,
-            overallGrade: grade,
-            gradeSummary: score > 80 ? "Detected high-quality organic material." : "Detected significant non-organic presence.",
+            segregationScore: finalScore,
+            overallGrade: finalScore > 90 ? 'Excellent' : finalScore > 75 ? 'Good' : finalScore > 55 ? 'Fair' : 'Poor',
+            gradeSummary: `Detected ${Math.round(organicSignal*100)}% biogenic density with ${Math.round(artSignal)}pts contamination risk factor.`,
             detectedItems,
-            recommendations: score < 80 ? [{ icon: '🧤', text: 'Please remove non-organic fragments.' }] : [{ icon: '✨', text: 'Clean batch ready for biogas processing.' }],
-            biogasSuitability: score > 80 ? 'Ideal' : score > 50 ? 'Acceptable' : 'Reject',
-            estimatedOrganicPercent: Math.min(100, score + 10),
-            actionRequired: score < 80
+            recommendations: finalScore < 80 ? [{ icon: '🧤', text: 'Filter out the detected inorganic fragments.' }] : [{ icon: '✨', text: 'Clean organic flow. Biogas yield will be high.' }],
+            biogasSuitability: suitability,
+            estimatedOrganicPercent: organicPct,
+            actionRequired: finalScore < 75
         };
     }
 
