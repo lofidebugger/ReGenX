@@ -230,35 +230,43 @@ const BioScanner = (() => {
       const count = img.length/80;
       r/=count; g/=count; b/=count;
       
-      const entropy = totalVar / count; // Texture noise
-      const greenRatio = g / (r + 1);
+      const entropy = totalVar / count; 
+      const greenRatio = (g + 5) / (r + 5); // Smoother ratio
+      const brightness = (r + g + b) / 3;
       
-      // IMPROVED GUARD: High entropy (complexity) means it's likely physical waste (wires/scraps), NOT a human face.
-      const isSkin = (r > 125 && r > g && r > b && (r-g) > 20 && entropy < 12); 
-      const isBlank = (entropy < 6 && (r+g+b)/3 > 200); 
+      const isSkin = (r > 130 && r > g && r > b && (r-g) > 25 && entropy < 10); 
+      const isBlank = (entropy < 5 && brightness > 220); 
 
       if (isSkin || isBlank) {
-        __displayInvalidInput(isSkin ? "Human Entity Detected" : "Blank/Uniform Surface Detected");
+        __displayInvalidInput(isSkin ? "Human Entity Detected" : "Blank Surface Detected");
       } else {
-        // Calculate score based on organic signature (greenness) and texture
-        let score = Math.floor((greenRatio * 35) + (entropy * 0.4) + 15);
+        // Dynamic Scoring Engine 5.0
+        // Base score starts higher to avoid the "20% trap"
+        let score = Math.floor((greenRatio * 45) + (entropy * 0.6) + 25);
         
-        // Penalize "Electric/Inorganic" signatures (low green, high contrast)
-        const isLikelyInorganic = greenRatio < 0.95;
-        if (isLikelyInorganic) score = Math.max(10, score - 30); 
+        // Organic Boost: If it's even slightly green-shifted
+        if (greenRatio > 1.02) score += 20;
+        
+        // Final sanity check: Waste is usually dark and messy
+        if (brightness < 120 && entropy > 15) score += 10;
 
+        // Selective Inorganic Penalty: Only for extremely neutral or bright reflective objects
+        const isExtremelyInorganic = (greenRatio < 0.9 && Math.abs(r-g) < 5);
+        if (isExtremelyInorganic) score = Math.max(15, score - 40);
+
+        const finalScore = Math.min(100, Math.max(12, score));
         const res = {
            invalidInput: false,
-           segregationScore: Math.min(100, score),
-           overallGrade: score > 80 ? 'Excellent' : (score > 45 ? 'Good' : 'Rejected'),
-           gradeSummary: isLikelyInorganic 
-              ? "Inorganic material detected. Not suitable for Biogas conversion."
-              : `Spectral sensor detected ${entropy > 25 ? 'High' : 'Moderate'} material density.`,
-           detectedItems: isLikelyInorganic 
-              ? [{ name: "Inorganic Waste", category: "Mixed", emoji: "⚙️" }]
-              : [{ name: "Organic Biomass", category: "Organic", emoji: "🌱" }],
-           biogasSuitability: score > 60 ? 'Ideal' : 'Reject',
-           estimatedOrganicPercent: isLikelyInorganic ? Math.floor(score/2) : Math.floor(score * 0.95),
+           segregationScore: finalScore,
+           overallGrade: finalScore > 80 ? 'Excellent' : (finalScore > 50 ? 'Good' : 'Rejected'),
+           gradeSummary: finalScore < 40 
+              ? "Inorganic/Low-density material detected. Please segregate properly."
+              : `Spectral sensors detected high organic density (${Math.floor(greenRatio*100)}%).`,
+           detectedItems: finalScore > 50 
+              ? [{ name: "Organic Bio-Waste", category: "Organic", emoji: "🌱" }]
+              : [{ name: "Inorganic/Mixed Scraps", category: "Mixed", emoji: "⚙️" }],
+           biogasSuitability: finalScore > 65 ? 'Ideal' : 'Reject',
+           estimatedOrganicPercent: Math.floor(finalScore * 0.92),
            iotTelemetry: { vibrance: Math.floor(greenRatio * 100), entropy: Math.floor(entropy) }
         };
         __displayResult(res);
