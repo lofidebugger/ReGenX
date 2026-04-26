@@ -742,18 +742,28 @@ window.openScanner = function() {
       <div class="laser-line"></div>
     </div>
     <div id="scanner-result" style="display:none; background:var(--green-light); padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid var(--green);">
-       <div style="font-weight:700; color:var(--green-hover); margin-bottom:12px;">✓ AI Analysis Complete</div>
+       <div style="font-weight:700; color:var(--green-hover); margin-bottom:12px;">✓ AI IoT Sensory Scan Complete</div>
        <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Detection:</span> <strong id="scan-type">--</strong></div>
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Biogas Potential:</span> <strong id="scan-biogas">--</strong></div>
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Contamination:</span> <strong id="scan-contam">--</strong></div>
+       <div class="between" style="font-size:13px; margin-bottom:8px;"><span class="muted">Bio-Suitability:</span> <strong id="scan-suitability" style="color:var(--green)">--</strong></div>
+       
+       <!-- Suitability Gauge -->
+       <div style="width:100%; height:8px; background:rgba(0,0,0,0.1); border-radius:4px; margin-bottom:12px; overflow:hidden;">
+          <div id="suitability-bar" style="width:0%; height:100%; background:var(--green); transition:width 1.5s ease-out;"></div>
+       </div>
+
+       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Exact Contamination:</span> <strong id="scan-contam" style="color:var(--red)">--</strong></div>
+       <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px; background:rgba(255,255,255,0.5); padding:8px; border-radius:6px;" id="contam-breakdown">
+          Analysis: Plastic (0%), Inorganic (0%), Chemical (0%)
+       </div>
+       
        <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Est. Weight:</span> <strong id="scan-weight">--</strong></div>
        <div style="margin-top:12px; padding:12px; background:white; border-radius:8px; border:1px solid rgba(0,0,0,0.1); font-size:12px;">
-          <strong>Recommendation:</strong> <span id="scan-recom">Analyzing...</span>
+          <strong>AI IoT Recommendation:</strong> <span id="scan-recom">Analyzing...</span>
        </div>
     </div>
     <div class="modal-actions" style="justify-content:space-between;">
       <button class="btn btn-ghost" onclick="closeScanner()">Cancel</button>
-      <button class="btn btn-primary" id="btn-scan-action" disabled>Analyzing Feed...</button>
+      <button class="btn btn-primary" id="btn-scan-action" disabled>Running IoT Analysis...</button>
     </div>
   `;
   document.getElementById('modal-box').innerHTML = html;
@@ -773,21 +783,30 @@ window.openScanner = function() {
   setTimeout(() => {
     const isOrganic = Math.random() > 0.3;
     const type = isOrganic ? "Organic (Food/Green Waste)" : "Recyclable (Paper/Plastic)";
-    const biogas = isOrganic ? Math.floor(Math.random() * 30 + 70) + "% (High)" : "0% (None)";
+    const suitScore = isOrganic ? Math.floor(Math.random() * 20 + 80) : Math.floor(Math.random() * 20);
+    const contamVal = Math.floor(Math.random() * 8) + 1;
     const randKg = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
-    const randContam = Math.floor(Math.random() * 5) + 1;
     
     document.getElementById('scan-type').textContent = type;
-    document.getElementById('scan-biogas').textContent = biogas;
-    document.getElementById('scan-contam').innerHTML = `${randContam}% ${randContam<3?'(Low)':'(Med)'}`;
+    document.getElementById('scan-suitability').textContent = `${suitScore}% (${suitScore > 75 ? 'IDEAL' : 'UNSUITABLE'})`;
+    document.getElementById('suitability-bar').style.width = suitScore + "%";
+    document.getElementById('suitability-bar').style.background = suitScore > 75 ? 'var(--green)' : 'var(--red)';
+    
+    document.getElementById('scan-contam').textContent = `${contamVal}% (Exact)`;
+    document.getElementById('contam-breakdown').textContent = isOrganic 
+      ? `Analysis: Plastic (${(contamVal*0.6).toFixed(1)}%), Inorganic (${(contamVal*0.3).toFixed(1)}%), Chemical (${(contamVal*0.1).toFixed(1)}%)`
+      : `Analysis: Organic (${(contamVal*0.8).toFixed(1)}%), Moisture (${(contamVal*0.2).toFixed(1)}%)`;
+      
     document.getElementById('scan-weight').textContent = randKg + " kg";
-    document.getElementById('scan-recom').textContent = isOrganic ? "Send to Biogas Digester (Plant Alpha) for high methane yield." : "Send to Recovery Center for material sorting.";
+    document.getElementById('scan-recom').innerHTML = suitScore > 75 
+      ? `<b style="color:var(--green)">✓ IDEAL FOR BIOGAS</b>. Methane yield prediction: High.` 
+      : `<b style="color:var(--red)">⚠ NOT IDEAL</b>. Divert to Recovery Center to avoid digester contamination.`;
     
     document.getElementById('scanner-result').style.display = 'block';
     
     const btn = document.getElementById('btn-scan-action');
     btn.disabled = false;
-    btn.textContent = "Use Data for Dispatch →";
+    btn.textContent = "Accept AI Recommendation →";
     btn.onclick = () => { 
       closeScanner(); 
       showView('v-pv-req'); 
