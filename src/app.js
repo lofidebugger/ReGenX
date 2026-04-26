@@ -736,20 +736,24 @@ async function renderProvider(mc, fullRender) {
 window.openScanner = function() {
   const html = `
     <h3 class="modal-title">AI Waste Assessor</h3>
-    <p class="modal-sub">Scanning organic material via camera feed...</p>
+    <p class="modal-sub">Scanning material via camera feed...</p>
     <div class="scanner-viewport scanner-corners">
       <video id="camera-feed" autoplay playsinline style="width:100%; height:100%; object-fit:cover;"></video>
       <div class="laser-line"></div>
     </div>
     <div id="scanner-result" style="display:none; background:var(--green-light); padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid var(--green);">
-       <div style="font-weight:700; color:var(--green-hover); margin-bottom:8px;">✓ Scan Complete</div>
-       <div class="between" style="font-size:13px;"><span class="muted">Contamination:</span> <strong id="scan-contam">--</strong></div>
-       <div class="between" style="font-size:13px;"><span class="muted">Est. Weight:</span> <strong id="scan-weight">--</strong></div>
-       <div class="between" style="font-size:13px;"><span class="muted">Predicted $RGX:</span> <strong style="color:var(--amber)" id="scan-rgx">--</strong></div>
+       <div style="font-weight:700; color:var(--green-hover); margin-bottom:12px;">✓ AI Analysis Complete</div>
+       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Detection:</span> <strong id="scan-type">--</strong></div>
+       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Biogas Potential:</span> <strong id="scan-biogas">--</strong></div>
+       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Contamination:</span> <strong id="scan-contam">--</strong></div>
+       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Est. Weight:</span> <strong id="scan-weight">--</strong></div>
+       <div style="margin-top:12px; padding:12px; background:white; border-radius:8px; border:1px solid rgba(0,0,0,0.1); font-size:12px;">
+          <strong>Recommendation:</strong> <span id="scan-recom">Analyzing...</span>
+       </div>
     </div>
     <div class="modal-actions" style="justify-content:space-between;">
       <button class="btn btn-ghost" onclick="closeScanner()">Cancel</button>
-      <button class="btn btn-primary" id="btn-scan-action" disabled>Analyzing...</button>
+      <button class="btn btn-primary" id="btn-scan-action" disabled>Analyzing Feed...</button>
     </div>
   `;
   document.getElementById('modal-box').innerHTML = html;
@@ -767,17 +771,31 @@ window.openScanner = function() {
   }
 
   setTimeout(() => {
+    const isOrganic = Math.random() > 0.3;
+    const type = isOrganic ? "Organic (Food/Green Waste)" : "Recyclable (Paper/Plastic)";
+    const biogas = isOrganic ? Math.floor(Math.random() * 30 + 70) + "% (High)" : "0% (None)";
     const randKg = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
     const randContam = Math.floor(Math.random() * 5) + 1;
+    
+    document.getElementById('scan-type').textContent = type;
+    document.getElementById('scan-biogas').textContent = biogas;
     document.getElementById('scan-contam').innerHTML = `${randContam}% ${randContam<3?'(Low)':'(Med)'}`;
     document.getElementById('scan-weight').textContent = randKg + " kg";
-    document.getElementById('scan-rgx').textContent = (randKg * 2) + " 🪙";
+    document.getElementById('scan-recom').textContent = isOrganic ? "Send to Biogas Digester (Plant Alpha) for high methane yield." : "Send to Recovery Center for material sorting.";
+    
     document.getElementById('scanner-result').style.display = 'block';
     
     const btn = document.getElementById('btn-scan-action');
     btn.disabled = false;
     btn.textContent = "Use Data for Dispatch →";
-    btn.onclick = () => { closeScanner(); showView('v-pv-req'); setTimeout(()=> { document.getElementById('req-kg').value = randKg; }, 100); };
+    btn.onclick = () => { 
+      closeScanner(); 
+      showView('v-pv-req'); 
+      setTimeout(()=> { 
+        document.getElementById('req-kg').value = randKg; 
+        document.getElementById('req-type').value = isOrganic ? "Food Waste" : "Dry Waste";
+      }, 100); 
+    };
   }, 4000);
 }
 
