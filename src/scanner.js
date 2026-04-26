@@ -249,16 +249,21 @@ const BioScanner = (() => {
     const greenRatio = g / (r + 1); 
     const isBright = brightness > 180; // Highly reflective
     
+    // Simple Skin-Tone / Human detection logic
+    const isSkinLike = (r > 120 && g > 80 && b > 60 && r > g && r > b && (r - g) > 20);
+    const isTooNeutral = Math.abs(r-g) < 10 && Math.abs(g-b) < 10; // Like a blank white/grey wall
+    
     let score = 55; // Base score
-    if (greenRatio > 1.1) score += 20; // It looks "Green/Organic"
-    if (greenRatio > 1.3) score += 15; // Very Organic
-    if (isBright) score -= 30; // Shiny objects usually mean plastic/metal
-    if (brightness < 60) score -= 10; // Too dark/shadowy
+    if (greenRatio > 1.1) score += 20; 
+    if (greenRatio > 1.3) score += 15; 
+    if (isBright) score -= 30; 
+    if (brightness < 60) score -= 10; 
     
     return {
       score: Math.max(10, Math.min(100, Math.floor(score))),
       isGreen: greenRatio > 1.1,
-      isBright: isBright
+      isBright: isBright,
+      isInvalid: isSkinLike || (isTooNeutral && brightness > 100)
     };
   }
 
@@ -293,6 +298,11 @@ const BioScanner = (() => {
     setTimeout(async () => {
       clearInterval(stepInt);
       
+      if (visualData.isInvalid) {
+        _displayInvalidResult();
+        return;
+      }
+
       const score = visualData.score;
       const isOrganic = score > 65;
       
@@ -376,6 +386,25 @@ const BioScanner = (() => {
 
         <button class="cam-btn cam-btn-capture" style="width:100%; justify-content:center;" onclick="BioScanner._applyData(${score}, ${r.estimatedOrganicPercent})">✓ USE DATA & CLOSE</button>
         <button class="cam-btn cam-btn-upload" style="width:100%; justify-content:center; margin-top:8px;" onclick="BioScanner._retake()">🔄 Retake</button>
+      </div>
+    </div>`;
+  }
+
+  function _displayInvalidResult() {
+    const resultArea = document.getElementById('bws-result');
+    resultArea.innerHTML = `
+    <div class="result-panel" style="margin-top:20px; border:2px solid var(--red);">
+      <div class="result-header" style="background:var(--red); padding:20px; color:white; text-align:center;">
+        <div style="font-size:28px; font-weight:800;">INVALID SCAN</div>
+        <div style="font-size:12px; text-transform:uppercase; letter-spacing:1px;">Non-Waste Object Detected</div>
+      </div>
+      <div class="result-body" style="padding:24px; text-align:center;">
+        <div style="font-size:48px; margin-bottom:16px;">👤</div>
+        <p style="font-size:14px; color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
+          The AI has detected a <b>Non-Waste entity</b> (possibly a human, skin-tone, or a blank background).<br><br>
+          Please re-aim the camera at the biowaste bin or pile to get an accurate segregation report.
+        </p>
+        <button class="cam-btn cam-btn-upload" style="width:100%; justify-content:center;" onclick="BioScanner._retake()">🔄 Retry Scan</button>
       </div>
     </div>`;
   }
