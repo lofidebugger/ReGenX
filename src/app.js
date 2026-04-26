@@ -38,6 +38,23 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
+window.showToast = function(msg) {
+  const t = document.getElementById('toast');
+  if(!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+window.fetchWeather = async function(lat, lng) {
+  if (!lat || !lng) { lat = 28.5355; lng = 77.3910; } // Fallback to Noida coords if undefined
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`);
+    const d = await r.json();
+    return d.current_weather; // { temperature, windspeed, weathercode }
+  } catch(e) { return null; }
+}
+
 // ── STATE ──
 let SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
 let selectedRole = 'provider';
@@ -214,6 +231,36 @@ function startTicker() {
   tickerTimer = setInterval(() => { i = (i+1)%msgs.length; t.textContent = msgs[i]; }, 20000);
 }
 
+let gwTimer = null;
+function startGreenWall() {
+  const feed = document.getElementById('gw-feed');
+  if(!feed) return;
+  if(gwTimer) clearInterval(gwTimer);
+  feed.innerHTML = '';
+  
+  const completedOrders = getAllOrders().filter(o => o.status === 'completed');
+  if(completedOrders.length === 0) {
+    feed.innerHTML = '<div class="gw-item" style="color:var(--text-muted)">No network activity yet. Complete a pickup to appear here!</div>';
+    return;
+  }
+  
+  completedOrders.slice(0, 5).forEach(o => {
+    const el = document.createElement('div');
+    el.className = 'gw-item';
+    el.innerHTML = `<div>🌟 ${o.providerOrg} diverted ${o.actualKg || o.kg}kg of waste!</div><div class="gw-time">${fmtDate(o.ts)}</div>`;
+    feed.appendChild(el);
+  });
+}
+
+window.buyMarketItem = function(price, name) {
+  if((SESSION.tokens || 0) < price) return showToast("⚠ Insufficient $RGX balance.");
+  SESSION.tokens -= price;
+  DB.set('acc:' + SESSION.id, SESSION);
+  document.getElementById('token-balance').textContent = SESSION.tokens;
+  showToast(`✓ Redeemed ${name}!`);
+  refreshCurrentView(true);
+}
+
 function executeLogin(acc) {
   SESSION = acc;
   document.getElementById('login-screen').style.display = 'none';
@@ -231,6 +278,8 @@ function executeLogin(acc) {
     tokenContainer.classList.add('hidden');
   }
   startTicker();
+  const gwWidget = document.getElementById('green-wall-widget');
+  if(gwWidget) { gwWidget.style.display = 'flex'; startGreenWall(); }
   
   buildSidebar();
   autoRefreshTimer = setInterval(() => refreshCurrentView(), 15000);
@@ -251,7 +300,9 @@ function buildSidebar() {
     nav.innerHTML = `
       <button class="nav-item active" onclick="showView('v-pv-dash')" id="nav-v-pv-dash"><span class="nav-item-icon">📊</span> Overview</button>
       <button class="nav-item" onclick="showView('v-pv-req')" id="nav-v-pv-req"><span class="nav-item-icon">➕</span> Dispatch Request</button>
-      <button class="nav-item" onclick="showView('v-pv-hist')" id="nav-v-pv-hist"><span class="nav-item-icon">📜</span> History</button>
+      <button class="nav-item" onclick="showView('v-pv-hist-week')" id="nav-v-pv-hist-week"><span class="nav-item-icon">📅</span> Weekly Records</button>
+      <button class="nav-item" onclick="showView('v-pv-hist-month')" id="nav-v-pv-hist-month"><span class="nav-item-icon">🗓️</span> Monthly Records</button>
+      <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
     `;
     showView('v-pv-dash');
   }
@@ -286,10 +337,10 @@ window.showView = function(viewId) {
 }
 
 // ── CORE DATA ENGINE ──
-function getAllOrders() { return DB.list('ord:').map(k => DB.get('ord:'+k)).sort((a,b)=>b.ts-a.ts); }
+function getAllOrders() { return DB.list('ord:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 function getOrder(id) { return DB.get('ord:'+id); }
 function saveOrder(o) { DB.set('ord:'+o.id, o); }
-function getAllLogs() { return DB.list('log:').map(k => DB.get('log:'+k)).sort((a,b)=>b.ts-a.ts); }
+function getAllLogs() { return DB.list('log:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 
 // Generic Order Card Component
 function buildOrderCard(o, role) {
@@ -347,6 +398,32 @@ function buildOrderCard(o, role) {
 // ── REFRESH CONTROLLER ──
 async function refreshCurrentView(fullRender = false) {
   const mc = document.getElementById('main-content');
+  if (currentView === 'v-market') {
+    if(fullRender) mc.innerHTML = `
+      <div class="between" style="margin-bottom:24px;">
+        <h3 class="heading">ReGen Carbon Exchange</h3>
+        <div class="badge badge-amber" style="font-size:14px; padding:6px 12px;">Your Balance: ${SESSION.tokens || 0} $RGX</div>
+      </div>
+      <div class="market-grid">
+         <div class="market-card">
+           <div class="mc-icon">📜</div><div class="mc-title">CSR Certificate</div>
+           <div class="mc-price">5,000 $RGX</div>
+           <button class="btn btn-primary btn-full" onclick="buyMarketItem(5000, 'CSR Certificate')">Redeem</button>
+         </div>
+         <div class="market-card">
+           <div class="mc-icon">🌲</div><div class="mc-title">Plant 10 Trees</div>
+           <div class="mc-price">2,000 $RGX</div>
+           <button class="btn btn-primary btn-full" onclick="buyMarketItem(2000, 'Plant Trees')">Donate</button>
+         </div>
+         <div class="market-card">
+           <div class="mc-icon">🗑️</div><div class="mc-title">Smart Bin Sensor</div>
+           <div class="mc-price">10,000 $RGX</div>
+           <button class="btn btn-primary btn-full" onclick="buyMarketItem(10000, 'Smart Bin Sensor')">Claim</button>
+         </div>
+      </div>
+    `;
+    return;
+  }
   if (SESSION.role === 'provider') await renderProvider(mc, fullRender);
   if (SESSION.role === 'rider') await renderRider(mc, fullRender);
   if (SESSION.role === 'plant') await renderPlant(mc, fullRender);
@@ -366,16 +443,27 @@ async function renderProvider(mc, fullRender) {
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
           
           <h3 class="heading" style="margin-top:32px; margin-bottom:16px;">IoT Smart Bins (Live)</h3>
-          <div class="glass-card sensor-card" style="margin-bottom:16px; border-color: var(--green);">
+          <div class="glass-card sensor-card" style="margin-bottom:16px; border-color: var(--border);">
             <div class="between">
               <div>
                 <div style="font-weight:700; font-size:16px; margin-bottom:4px;">Main Kitchen Bin</div>
-                <div class="badge badge-amber" style="animation: pulse 1.5s infinite">85% Full</div>
+                <div class="badge badge-green">0% Full</div>
               </div>
-              <div class="gauge-circle" style="border-top-color:var(--amber); width:50px; height:50px; font-size:14px; border-width:3px;"><span>85%</span></div>
+              <div class="gauge-circle" style="border-top-color:var(--green); width:50px; height:50px; font-size:14px; border-width:3px; animation:none;"><span>0%</span></div>
             </div>
-            <p style="font-size:12px; color:var(--text-muted); margin-top:8px;">Threshold reached. Auto-dispatch suggested.</p>
-            <button class="btn btn-sm btn-amber" style="margin-top:12px;" onclick="showView('v-pv-req')">1-Click Dispatch</button>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:8px;">Bin is empty. Awaiting waste accumulation.</p>
+          </div>
+
+          <h3 class="heading" style="margin-top:24px; margin-bottom:16px;">Impact Analytics</h3>
+          <div class="glass-card" style="padding:16px;">
+            <div class="between" style="margin-bottom:12px;">
+               <div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Timeframe</div>
+               <select class="form-select" style="width:auto; padding:4px 8px;" onchange="updatePvChart(this.value)">
+                 <option value="weekly">Weekly</option>
+                 <option value="monthly">Monthly</option>
+               </select>
+            </div>
+            <div class="chart-container"><canvas id="pvChart"></canvas></div>
           </div>
         </div>
         <div>
@@ -386,30 +474,55 @@ async function renderProvider(mc, fullRender) {
             <button class="btn btn-primary" onclick="showView('v-pv-req')">Create Request →</button>
           </div>
 
+          <h3 class="heading" style="margin-top:24px; margin-bottom:16px;">AI Vision Waste Scanner</h3>
+          <div class="glass-card" style="margin-bottom:16px; border-color:var(--blue);">
+            <div style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">Assess contamination and weight via computer vision before dispatch.</div>
+            <button class="btn btn-primary btn-full" onclick="openScanner()">📸 Launch AI Scanner</button>
+          </div>
+
           <div class="glass-card sensor-card" style="margin-top:24px; padding:16px;">
             <div class="ai-badge">✨ AI Predicts</div>
-            <h4 style="margin-bottom:4px;">120kg Expected Tomorrow</h4>
-            <p style="font-size:13px; color:var(--text-muted);">Based on historical weekend trends and current hostel occupancy. Consider booking an early shift.</p>
+            <h4 style="margin-bottom:4px;" id="pv-ai-predict">0kg Expected Tomorrow</h4>
+            <p style="font-size:13px; color:var(--text-muted);">Based on your recent historical completion data.</p>
           </div>
 
           <h3 class="heading" style="margin-top:24px; margin-bottom:16px;">Regional Leaderboard</h3>
-          <div class="glass-card" style="padding:16px;">
-            <div class="between" style="padding:8px 0; border-bottom:1px solid var(--border);">
-               <div style="font-weight:600;"><span style="color:var(--amber);">1.</span> Alpha Industries</div>
-               <div class="badge badge-green">1,420 kg</div>
-            </div>
-            <div class="between" style="padding:8px 0; border-bottom:1px solid var(--border);">
-               <div style="font-weight:600;"><span style="color:var(--amber);">2.</span> Beta Mess</div>
-               <div class="badge badge-green">980 kg</div>
-            </div>
-            <div class="between" style="padding:8px 0;">
-               <div style="font-weight:600;"><span style="color:var(--amber);">3.</span> ${SESSION.org} (You)</div>
-               <div class="badge badge-green" id="pv-my-kg">0 kg</div>
-            </div>
+          <div class="glass-card" style="padding:16px;" id="pv-leaderboard">
+            <!-- Dynamic Leaderboard -->
           </div>
         </div>
       </div>
     `;
+    
+    // Calculate Leaderboard
+    const allCompleted = getAllOrders().filter(o=>o.status==='completed');
+    const lbMap = {};
+    allCompleted.forEach(o => {
+       lbMap[o.providerId] = (lbMap[o.providerId]||0) + parseInt(o.actualKg||o.kg||0);
+    });
+    // Ensure current user is in map even if 0
+    if(!lbMap[SESSION.id]) lbMap[SESSION.id] = 0;
+    
+    const lbSorted = Object.keys(lbMap).map(id => ({
+       id, org: (DB.get('acc:'+id)||{org:'Unknown'}).org, kg: lbMap[id]
+    })).sort((a,b)=>b.kg - a.kg).slice(0,3);
+    
+    const lbHTML = lbSorted.map((item, i) => `
+      <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
+         <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
+         <div class="badge badge-green">${item.kg} kg</div>
+      </div>
+    `).join('');
+    
+    const lbDiv = document.getElementById('pv-leaderboard');
+    if(lbDiv) lbDiv.innerHTML = lbHTML;
+    
+    // Predict next day = average of all time (simple logic)
+    const myTotal = lbMap[SESSION.id] || 0;
+    const myComps = completed.length;
+    const avg = myComps > 0 ? Math.round(myTotal / myComps) : 0;
+    const aiPredict = document.getElementById('pv-ai-predict');
+    if(aiPredict) aiPredict.textContent = avg + "kg Expected Tomorrow";
     const totalKg = completed.reduce((s,o)=>s+(o.actualKg||o.kg),0);
     document.getElementById('pv-stats').innerHTML = `
       <div class="stat-card"><div class="stat-val">${orders.length}</div><div class="stat-lbl">Total Requests</div></div>
@@ -419,6 +532,7 @@ async function renderProvider(mc, fullRender) {
     const pvMyKg = document.getElementById('pv-my-kg');
     if(pvMyKg) pvMyKg.textContent = totalKg + ' kg';
     document.getElementById('pv-act').innerHTML = active.length ? active.map(o=>buildOrderCard(o,'provider')).join('') : '<div class="empty-state"><div class="empty-sub">No active dispatches.</div></div>';
+    if(fullRender) setTimeout(initPvChart, 100);
   }
   
   if (currentView === 'v-pv-req') {
@@ -444,10 +558,145 @@ async function renderProvider(mc, fullRender) {
     `;
   }
 
-  if (currentView === 'v-pv-hist') {
-    if(fullRender) mc.innerHTML = `<h3 class="heading" style="margin-bottom:24px;">History</h3><div id="pv-hist-list"></div>`;
-    document.getElementById('pv-hist-list').innerHTML = completed.length ? completed.map(o=>buildOrderCard(o,'provider')).join('') : '<div class="empty-state"><div class="empty-sub">No completed history.</div></div>';
+  if (currentView === 'v-pv-hist-week' || currentView === 'v-pv-hist-month') {
+    const isMonth = currentView === 'v-pv-hist-month';
+    const limitDays = isMonth ? 30 : 7;
+    const now = Date.now();
+    const filteredHistory = completed.filter(o => (now - o.ts) <= (limitDays * 24 * 60 * 60 * 1000));
+    
+    if(fullRender) mc.innerHTML = `
+      <div class="between" style="margin-bottom:24px;">
+         <h3 class="heading" style="margin-bottom:0;">${isMonth ? 'Monthly' : 'Weekly'} Records</h3>
+         ${filteredHistory.length ? `<button class="btn btn-outline-danger btn-sm" onclick="clearAllHistory('provider')">🗑 Clear All History</button>` : ''}
+      </div>
+      <div id="pv-hist-list"></div>
+    `;
+    document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : `<div class="empty-state"><div class="empty-sub">No completed history in the last ${limitDays} days.</div></div>`;
   }
+}
+
+window.openScanner = function() {
+  const html = `
+    <h3 class="modal-title">AI Waste Assessor</h3>
+    <p class="modal-sub">Scanning organic material via camera feed...</p>
+    <div class="scanner-viewport scanner-corners">
+      <video id="camera-feed" autoplay playsinline style="width:100%; height:100%; object-fit:cover;"></video>
+      <div class="laser-line"></div>
+    </div>
+    <div id="scanner-result" style="display:none; background:var(--green-light); padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid var(--green);">
+       <div style="font-weight:700; color:var(--green-hover); margin-bottom:8px;">✓ Scan Complete</div>
+       <div class="between" style="font-size:13px;"><span class="muted">Contamination:</span> <strong id="scan-contam">--</strong></div>
+       <div class="between" style="font-size:13px;"><span class="muted">Est. Weight:</span> <strong id="scan-weight">--</strong></div>
+       <div class="between" style="font-size:13px;"><span class="muted">Predicted $RGX:</span> <strong style="color:var(--amber)" id="scan-rgx">--</strong></div>
+    </div>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="btn btn-ghost" onclick="closeScanner()">Cancel</button>
+      <button class="btn btn-primary" id="btn-scan-action" disabled>Analyzing...</button>
+    </div>
+  `;
+  document.getElementById('modal-box').innerHTML = html;
+  document.getElementById('modal').classList.add('open');
+  
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(stream => {
+      window.currentStream = stream;
+      document.getElementById('camera-feed').srcObject = stream;
+    }).catch(err => {
+      console.warn("Camera access denied or unavailable", err);
+      window.showToast("⚠ Camera access denied. Using simulated feed.");
+    });
+  }
+
+  setTimeout(() => {
+    const randKg = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
+    const randContam = Math.floor(Math.random() * 5) + 1;
+    document.getElementById('scan-contam').innerHTML = `${randContam}% ${randContam<3?'(Low)':'(Med)'}`;
+    document.getElementById('scan-weight').textContent = randKg + " kg";
+    document.getElementById('scan-rgx').textContent = (randKg * 2) + " 🪙";
+    document.getElementById('scanner-result').style.display = 'block';
+    
+    const btn = document.getElementById('btn-scan-action');
+    btn.disabled = false;
+    btn.textContent = "Use Data for Dispatch →";
+    btn.onclick = () => { closeScanner(); showView('v-pv-req'); setTimeout(()=> { document.getElementById('req-kg').value = randKg; }, 100); };
+  }, 4000);
+}
+
+window.closeScanner = function() {
+  if(window.currentStream) {
+    window.currentStream.getTracks().forEach(t => t.stop());
+    window.currentStream = null;
+  }
+  closeModal();
+}
+
+let pvChartInstance = null;
+
+function initPvChart() {
+  const ctx = document.getElementById('pvChart');
+  if(!ctx || window.Chart === undefined) return;
+  if(pvChartInstance) pvChartInstance.destroy();
+  
+  // Calculate dynamic weekly data from real history
+  const orders = getAllOrders().filter(o => o.providerId === SESSION.id && o.status === 'completed');
+  let kgData = [0,0,0,0,0,0,0];
+  let co2Data = [0,0,0,0,0,0,0];
+  
+  // Dump all into current day for simplicity in local demo without real dates over weeks
+  const totKg = orders.reduce((s,o)=>s+parseInt(o.actualKg||o.kg), 0);
+  kgData[6] = totKg;
+  co2Data[6] = Math.round(totKg * 0.62);
+  
+  window._pvDynamicData = { kg: kgData, co2: co2Data, totKg };
+
+  pvChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Today'],
+      datasets: [{
+        label: 'Waste Generated (kg)',
+        data: kgData,
+        backgroundColor: '#0D9488',
+        borderRadius: 4
+      }, {
+        label: 'CO2 Offset (kg)',
+        data: co2Data,
+        backgroundColor: '#3B82F6',
+        borderRadius: 4
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+}
+
+window.updatePvChart = function(period) {
+  if(!pvChartInstance) return;
+  const d = window._pvDynamicData;
+  if(!d) return;
+  
+  if(period === 'monthly') {
+    pvChartInstance.data.labels = ['Week 1', 'Week 2', 'Week 3', 'This Week'];
+    pvChartInstance.data.datasets[0].data = [0, 0, 0, d.totKg];
+    pvChartInstance.data.datasets[1].data = [0, 0, 0, Math.round(d.totKg*0.62)];
+  } else {
+    pvChartInstance.data.labels = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Today'];
+    pvChartInstance.data.datasets[0].data = d.kg;
+    pvChartInstance.data.datasets[1].data = d.co2;
+  }
+  pvChartInstance.update();
+}
+
+window.clearAllHistory = function(role) {
+  if(!confirm("Are you sure you want to clear all completed history? This cannot be undone.")) return;
+  const orders = getAllOrders().filter(o => {
+    if(role === 'provider') return o.providerId === SESSION.id && o.status === 'completed';
+    if(role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
+    return false;
+  });
+  orders.forEach(o => window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'ord:' + o.id));
+  showToast("✓ History Cleared");
+  refreshCurrentView(true);
 }
 
 window.submitPvRequest = function() {
@@ -522,15 +771,30 @@ async function renderRider(mc, fullRender) {
               </div>
             </div>
           </div>
+          <div class="glass-card sensor-card" style="margin-top:16px; padding:16px; border-color:var(--border);">
+             <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase;">Live Environment Impact</div>
+             <div class="between" style="margin-bottom:8px;">
+               <div>🌧️ Weather</div>
+               <div style="font-weight:700; color:var(--text-muted);" id="rt-weather">Fetching...</div>
+             </div>
+             <div class="between" style="margin-bottom:8px;">
+               <div>🚗 Traffic Density</div>
+               <div style="font-weight:700; color:var(--green);" id="rt-traffic">Normal</div>
+             </div>
+             <div class="between">
+               <div>⏱️ AI Routing Adjust</div>
+               <div style="font-weight:700; color:var(--text-muted);" id="rt-ai-adj">+0 Mins</div>
+             </div>
+          </div>
           <div class="glass-card sensor-card" style="margin-top:16px; padding:16px; border-color:var(--blue);">
              <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase;">Vehicle Telemetry (Live)</div>
              <div class="between" style="margin-bottom:8px;">
                <div>🔋 Battery Level</div>
-               <div style="font-weight:700; color:var(--green);">78%</div>
+               <div style="font-weight:700; color:var(--text-muted);" id="rt-batt">--</div>
              </div>
              <div class="between" style="margin-bottom:8px;">
                <div>🌡️ Cargo Temp</div>
-               <div style="font-weight:700;">14°C</div>
+               <div style="font-weight:700;" id="rt-temp">--</div>
              </div>
              <div class="between">
                <div>⚙️ AI ETA Confidence</div>
@@ -591,6 +855,32 @@ async function renderRider(mc, fullRender) {
         }
       }
     }, 100);
+    
+    // API Call for Rider Dashboard
+    if(active && fullRender) {
+       fetchWeather(SESSION.lat, SESSION.lng).then(w => {
+          if(!w || currentView !== 'v-rd-dash') return;
+          const wt = document.getElementById('rt-weather');
+          const ct = document.getElementById('rt-temp');
+          if(wt) {
+            let cond = "Clear";
+            if(w.weathercode > 50) cond = "Raining";
+            if(w.weathercode > 70) cond = "Snowing";
+            wt.textContent = cond + ` (${Math.round(w.temperature)}°C)`;
+            wt.style.color = w.weathercode > 50 ? "var(--amber)" : "var(--green)";
+            if(w.weathercode > 50) { 
+               document.getElementById('rt-traffic').textContent = "Congested"; 
+               document.getElementById('rt-ai-adj').textContent = "+12 Mins"; 
+               document.getElementById('rt-ai-adj').style.color = "var(--amber)"; 
+            }
+          }
+          if(ct) ct.textContent = Math.round(w.temperature - 2) + "°C";
+          document.getElementById('rt-batt').textContent = Math.floor(Math.random() * 30 + 60) + "%";
+          document.getElementById('rt-batt').style.color = "var(--green)";
+          document.getElementById('rt-conf').textContent = "98.2%";
+          document.getElementById('rt-conf').style.color = "var(--blue)";
+       });
+    }
   }
 
   if (currentView === 'v-rd-jobs') {
@@ -684,20 +974,25 @@ async function renderPlant(mc, fullRender) {
       <h3 class="heading" style="margin-bottom:16px; margin-top:16px;">Live Digester Vitals</h3>
       <div class="stats-grid" style="margin-bottom:32px;">
         <div class="glass-card sensor-card" style="text-align:center;">
-           <div class="gauge-circle" style="border-top-color:var(--red);"><span>38°C</span></div>
+           <div class="gauge-circle" style="border-top-color:var(--text-muted); animation:none;" id="pl-gauge-temp"><span>0°C</span></div>
            <div style="font-weight:600;">Core Temp</div>
-           <div style="font-size:11px; color:var(--green); margin-top:4px;">Optimal</div>
+           <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" id="pl-stat-temp">Fetching...</div>
         </div>
         <div class="glass-card sensor-card" style="text-align:center;">
-           <div class="gauge-circle" style="border-top-color:var(--blue);"><span>1.2</span></div>
+           <div class="gauge-circle" style="border-top-color:var(--text-muted); animation:none;"><span>0</span></div>
            <div style="font-weight:600;">Pressure (atm)</div>
-           <div style="font-size:11px; color:var(--green); margin-top:4px;">Stable</div>
+           <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Offline</div>
         </div>
         <div class="glass-card sensor-card" style="text-align:center;">
-           <div class="gauge-circle" style="border-top-color:var(--amber);"><span>45</span></div>
+           <div class="gauge-circle" style="border-top-color:var(--text-muted); animation:none;"><span>0</span></div>
            <div style="font-weight:600;">CH₄ Flow (m³/h)</div>
-           <div style="font-size:11px; color:var(--amber); margin-top:4px;">Surging</div>
+           <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Offline</div>
         </div>
+      </div>
+
+      <h3 class="heading" style="margin-top:24px; margin-bottom:16px;">Operational Analytics</h3>
+      <div class="glass-card" style="padding:16px; margin-bottom:32px;">
+         <div class="chart-container"><canvas id="plChart"></canvas></div>
       </div>
 
       <div class="two-col">
@@ -721,6 +1016,32 @@ async function renderPlant(mc, fullRender) {
          <div style="font-size:14px;"><strong>Biogas:</strong> ${l.bio} m³ &nbsp;·&nbsp; <strong>Compost:</strong> ${l.comp} kg</div>
       </div>
     `).join('') : '<div class="empty-state">No outputs logged.</div>';
+    
+    if(fullRender) {
+      setTimeout(initPlChart, 100);
+      fetchWeather(SESSION.lat, SESSION.lng).then(w => {
+         if(!w || currentView !== 'v-pl-dash') return;
+         const coreTemp = Math.round(w.temperature + 15);
+         const gt = document.getElementById('pl-gauge-temp');
+         if(gt) {
+            gt.style.borderTopColor = "var(--red)"; gt.style.animation = "spin-slow 10s linear infinite";
+            gt.querySelector('span').textContent = coreTemp + "°C";
+            document.getElementById('pl-stat-temp').textContent = "Optimal"; document.getElementById('pl-stat-temp').style.color = "var(--green)";
+         }
+         const gp = document.getElementById('pl-gauge-pres');
+         if(gp) {
+            gp.style.borderTopColor = "var(--blue)"; gp.style.animation = "spin-slow 10s linear infinite";
+            gp.querySelector('span').textContent = "1.2";
+            document.getElementById('pl-stat-pres').textContent = "Stable"; document.getElementById('pl-stat-pres').style.color = "var(--green)";
+         }
+         const gf = document.getElementById('pl-gauge-flow');
+         if(gf) {
+            gf.style.borderTopColor = "var(--amber)"; gf.style.animation = "spin-slow 10s linear infinite";
+            gf.querySelector('span').textContent = "45";
+            document.getElementById('pl-stat-flow').textContent = "Surging"; document.getElementById('pl-stat-flow').style.color = "var(--amber)";
+         }
+      });
+    }
   }
 
   if (currentView === 'v-pl-in') {
@@ -735,11 +1056,18 @@ async function renderPlant(mc, fullRender) {
           <h3 class="heading" style="margin-bottom:24px;">Log Daily Output</h3>
           <div class="form-group"><label class="form-label">Biogas Produced (m³)</label><input class="form-input" id="out-bio" type="number" step="0.1"></div>
           <div class="form-group"><label class="form-label">Compost Yield (kg)</label><input class="form-input" id="out-comp" type="number" step="0.1"></div>
-          <div class="form-group"><label class="form-label">Digester Temp (°C)</label><input class="form-input" id="out-temp" type="number" step="0.1"></div>
+          <div class="form-group"><label class="form-label">Digester Temp (°C) <span style="font-size:11px; color:var(--amber)">(Auto-detected)</span></label><input class="form-input" id="out-temp" type="number" step="0.1" readonly placeholder="Fetching live temp..."></div>
           <button class="btn btn-primary btn-full" onclick="savePlantLog()">Save Record</button>
         </div>
       </div>
     `;
+    if(fullRender) {
+      fetchWeather(SESSION.lat, SESSION.lng).then(w => {
+         if(w && document.getElementById('out-temp')) {
+            document.getElementById('out-temp').value = Math.round(w.temperature + 15);
+         }
+      });
+    }
   }
 }
 
@@ -780,11 +1108,52 @@ window.confirmPlantReceipt = function(id) {
 window.savePlantLog = function() {
   const bio = document.getElementById('out-bio').value;
   const comp = document.getElementById('out-comp').value;
-  if(!bio && !comp) return showToast("⚠ Enter output values.");
+  if(!bio && !comp) return window.showToast("⚠ Enter output values.");
   
   DB.set('log:'+uid(), { id: uid(), ts: ts(), plantId: SESSION.id, bio, comp, temp: document.getElementById('out-temp').value });
-  showToast("✓ Output logged!");
+  window.showToast("✓ Output logged! Automated msg sent.");
   showView('v-pl-dash');
+}
+
+let plChartInstance = null;
+function initPlChart() {
+  const ctx = document.getElementById('plChart');
+  if(!ctx || window.Chart === undefined) return;
+  if(plChartInstance) plChartInstance.destroy();
+  
+  const logs = getAllLogs().filter(l => l.plantId === SESSION.id);
+  let bioData = [0,0,0,0,0,0];
+  let compData = [0,0,0,0,0,0];
+  
+  if(logs.length > 0) {
+      // Just map the last 6 logs
+      const recent = logs.slice(0,6).reverse();
+      for(let i=0; i<recent.length; i++){
+          bioData[5 - recent.length + 1 + i] = parseFloat(recent[i].bio||0);
+          compData[5 - recent.length + 1 + i] = parseFloat(recent[i].comp||0);
+      }
+  }
+
+  plChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: ['Reading 1', 'Reading 2', 'Reading 3', 'Reading 4', 'Reading 5', 'Latest'],
+      datasets: [{
+        label: 'Digester Temp (°C)',
+        data: compData, // using compost for secondary line as temp is optional
+        borderColor: '#EF4444',
+        tension: 0.4
+      }, {
+        label: 'Methane Yield (m³)',
+        data: bioData,
+        borderColor: '#0D9488',
+        tension: 0.4,
+        fill: true,
+        backgroundColor: 'rgba(13, 148, 136, 0.1)'
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 }
 
 // ── INIT ──

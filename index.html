@@ -14,6 +14,9 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <!-- Custom Assets -->
 <link rel="stylesheet" href="./src/styles.css" />
 <script type="module" src="./src/app.js"></script>
@@ -110,6 +113,15 @@
     <div class="sidebar-nav" id="sidebar-nav">
       <!-- Injected by JS -->
     </div>
+
+    <!-- GREEN WALL WIDGET -->
+    <div class="green-wall-widget" id="green-wall-widget" style="display:none;">
+      <div class="gw-header">🌍 The Green Wall</div>
+      <div class="gw-feed" id="gw-feed">
+         <!-- Feed items injected -->
+      </div>
+    </div>
+
     <div class="sidebar-footer">
       <button class="nav-item" id="theme-toggle" onclick="toggleTheme()">
         <span class="nav-item-icon">🌗</span> Toggle Theme
