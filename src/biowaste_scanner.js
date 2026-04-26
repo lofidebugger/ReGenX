@@ -313,102 +313,92 @@ const BioScanner = (() => {
         if (laser) laser.style.display = 'none';
     }
 
-    // ── REAL LOCAL AI ENGINE (TensorFlow MobileNet) ──────────────────────────
+    // ── REBUILT HYBRID AI ENGINE (Probability + Spectral Analysis) ──────────
     async function __realLocalAI() {
         const video = document.getElementById('bws-video');
+        const canvas = document.createElement('canvas');
         if (!video || !__tfModel) {
             __toast('⌛ AI Model still loading...');
             return __smartSimulation(); 
         }
         
-        const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
-        canvas.getContext('2d').drawImage(video, 0, 0);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
 
+        // 1. AI OBJECT RECOGNITION (MobileNet)
         const predictions = await __tfModel.classify(canvas);
-        console.log('[BioScanner] Real AI Raw Predictions:', predictions);
+        
+        // 2. SPECTRAL COLOR ANALYSIS (Pixel Pass)
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let rSum = 0, gSum = 0, bSum = 0, brightSum = 0;
+        const step = 40; 
+        for (let i = 0; i < pixels.length; i += step) {
+            rSum += pixels[i]; gSum += pixels[i+1]; bSum += pixels[i+2];
+            brightSum += (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+        }
+        const count = pixels.length / step;
+        const rAvg = rSum / count, gAvg = gSum / count, bAvg = bSum / count, brAvg = brightSum / count;
+        const total = rAvg + gAvg + bAvg + 1;
+        const spectralG = (gAvg / total) * 100;
+        const spectralB = (bAvg / total) * 100;
 
-        // Define Keyword Categories
-        const organicKeywords = ['fruit', 'banana', 'orange', 'apple', 'veg', 'leaf', 'plant', 'food', 'bread', 'meat', 'egg', 'compost', 'wood', 'natural', 'tree'];
-        const plasticKeywords = ['plastic', 'bottle', 'cup', 'wrapper', 'bag', 'pouch', 'synthetic', 'poly', 'styrofoam', 'water bottle'];
-        const eWasteKeywords = ['electronic', 'phone', 'mouse', 'keyboard', 'laptop', 'remote', 'battery', 'wire', 'cable', 'circuit', 'computer', 'screen', 'monitor', 'hardware', 'appliance', 'joystick'];
-        const metalKeywords = ['metal', 'can', 'aluminum', 'steel', 'iron', 'copper', 'foil', 'brass', 'bronze'];
+        // 3. CROSS-VERIFICATION LOGIC
+        const organicKeywords = ['fruit', 'banana', 'orange', 'apple', 'veg', 'leaf', 'plant', 'food', 'bread', 'meat', 'egg', 'compost', 'wood', 'natural'];
+        const contaminantKeywords = ['plastic', 'bottle', 'cup', 'wrapper', 'bag', 'pouch', 'synthetic', 'poly', 'styrofoam', 'metal', 'can', 'aluminum', 'electronic', 'wire', 'phone', 'battery'];
 
-        let detectedItems = [];
-        let organicConfidence = 0;
-        let rejectConfidence = 0;
-        let hasHardReject = false;
-        let hardRejectType = '';
+        let aiOrgConf = 0;
+        let aiContamConf = 0;
+        let detected = [];
 
         predictions.forEach(p => {
             const name = p.className.toLowerCase();
             const prob = p.probability;
-            
             const isOrg = organicKeywords.some(k => name.includes(k));
-            const isPlas = plasticKeywords.some(k => name.includes(k));
-            const isEwaste = eWasteKeywords.some(k => name.includes(k));
-            const isMetal = metalKeywords.some(k => name.includes(k));
+            const isContam = contaminantKeywords.some(k => name.includes(k));
 
-            if (isEwaste && prob > 0.05) {
-                hasHardReject = true;
-                hardRejectType = 'Electronic Waste';
-                detectedItems.push({ name: p.className.split(',')[0], category: 'E-Waste', isContaminant: true, emoji: '🔌' });
-                rejectConfidence += prob;
-            } else if ((isPlas || isMetal) && prob > 0.05) {
-                hasHardReject = true;
-                hardRejectType = isPlas ? 'Plastic' : 'Metal';
-                detectedItems.push({ name: p.className.split(',')[0], category: hardRejectType, isContaminant: true, emoji: isPlas ? '🥤' : '🥫' });
-                rejectConfidence += prob;
-            } else if (isOrg) {
-                detectedItems.push({ name: p.className.split(',')[0], category: 'Organic', isContaminant: false, emoji: '🍃' });
-                organicConfidence += prob;
-            } else {
-                detectedItems.push({ name: p.className.split(',')[0], category: 'Misc', isContaminant: prob > 0.3, emoji: '❓' });
-            }
+            if (isOrg) aiOrgConf += prob;
+            if (isContam) aiContamConf += prob;
+            detected.push({ name: p.className.split(',')[0], isContam: isContam || (prob < 0.1), emoji: isOrg ? '🍃' : '📦' });
         });
 
-        // ── REAL SCORING ENGINE ──────────────────────────────────────────
-        let score = 95;
-        if (hasHardReject) {
-            score = Math.max(5, 20 - (rejectConfidence * 80));
-        } else if (organicConfidence < 0.1) {
-            score = Math.round(30 + (Math.random() * 10));
-        } else {
-            score = Math.min(100, Math.round(70 + (organicConfidence * 30)));
-        }
+        // 4. SCIENTIFIC CONTAMINATION INDEX CALCULATION
+        // Base score affected by both AI (what it is) and Spectral (what it's made of)
+        let contaminationIndex = (aiContamConf * 80) + (spectralB * 1.5);
+        if (brAvg > 210 && spectralG < 30) contaminationIndex += 20; // Shiny/White penalty
+        
+        let finalScore = 100 - contaminationIndex;
+        finalScore = Math.max(5, Math.min(100, Math.round(finalScore)));
 
+        // 5. DATA RESPONSE
         return {
-            segregationScore: score,
-            overallGrade: score > 80 ? 'Excellent' : score > 50 ? 'Fair' : 'Poor',
-            gradeSummary: hasHardReject 
-                ? `CRITICAL: AI detected ${hardRejectType}. This is NOT acceptable for biogas.`
-                : `AI identified "${predictions[0].className.split(',')[0]}" with ${Math.round(predictions[0].probability * 100)}% confidence.`,
-            detectedItems: detectedItems.length ? detectedItems : [{ name: predictions[0].className.split(',')[0], category: 'Misc', isContaminant: true, emoji: '❓' }],
-            recommendations: hasHardReject 
-                ? [{ icon: '🚫', text: 'DO NOT DISPOSE. This is hazardous waste.' }]
-                : score < 80 ? [{ icon: '🧤', text: 'Remove non-organic items.' }] : [{ icon: '✨', text: 'Clean batch confirmed.' }],
-            biogasSuitability: score > 70 ? 'Ideal' : 'Reject',
-            estimatedOrganicPercent: hasHardReject ? 0 : Math.round(organicConfidence * 100),
-            actionRequired: score < 75,
+            segregationScore: finalScore,
+            overallGrade: finalScore > 88 ? 'Pristine' : finalScore > 75 ? 'Good' : finalScore > 45 ? 'Contaminated' : 'Reject',
+            gradeSummary: `Analysis detected ${Math.round(contaminationIndex)}% contamination risk based on AI recognition and spectral density.`,
+            detectedItems: detected.slice(0,3),
+            recommendations: finalScore < 80 ? [{ icon: '🧤', text: 'Remove synthetic materials identified by AI.' }] : [{ icon: '✨', text: 'High purity biogenic batch.' }],
+            biogasSuitability: finalScore > 70 ? 'High Yield' : 'Low Yield/Reject',
+            estimatedOrganicPercent: Math.max(0, 100 - Math.round(contaminationIndex * 1.2)),
+            actionRequired: finalScore < 80,
             stats: { 
-                g: Math.round(organicConfidence * 100), 
-                r: 10, 
-                b: Math.round(rejectConfidence * 100), 
-                v: hasHardReject ? 100 : 25 
+                g: Math.round(spectralG), 
+                r: Math.round(aiOrgConf * 100), 
+                b: Math.round(contaminationIndex), 
+                v: Math.round(brAvg / 2) 
             }
         };
     }
 
     function __smartSimulation() {
         return {
-            segregationScore: 50,
-            overallGrade: 'Fair',
-            gradeSummary: "AI Model loading. Using basic visual heuristics.",
-            detectedItems: [{ name: 'Scanning...', category: 'Unknown', isContaminant: false, emoji: '⌛' }],
+            segregationScore: 0,
+            overallGrade: 'Loading...',
+            gradeSummary: "AI Engine is warming up...",
+            detectedItems: [],
             recommendations: [],
-            biogasSuitability: 'Marginal',
-            estimatedOrganicPercent: 50,
+            biogasSuitability: 'Pending',
+            estimatedOrganicPercent: 0,
             actionRequired: true,
             stats: { g: 0, r: 0, b: 0, v: 0 }
         };
