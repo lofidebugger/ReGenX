@@ -303,41 +303,88 @@ const BioScanner = (() => {
 
     // ── REAL LOCAL AI ENGINE (TensorFlow MobileNet) ──────────────────────────
     async function __realLocalAI() {
-        const canvas = document.createElement('canvas');
-        if (!__tfModel) {
+        const video = document.getElementById('bws-video');
+        if (!video || !__tfModel) {
             __toast('⌛ AI Model still loading...');
             return __smartSimulation(); 
         }
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        canvas.getContext('2d').drawImage(video, 0, 0);
 
         const predictions = await __tfModel.classify(canvas);
-        const organicKeywords = ['fruit', 'banana', 'orange', 'apple', 'veg', 'leaf', 'plant', 'food', 'bread', 'meat', 'egg', 'compost', 'wood', 'natural'];
-        const plasticKeywords = ['plastic', 'bottle', 'cup', 'wrapper', 'bag', 'pouch', 'synthetic', 'poly', 'styrofoam'];
-        const eWasteKeywords = ['electronic', 'phone', 'mouse', 'keyboard', 'laptop', 'remote', 'battery', 'wire', 'cable', 'circuit', 'computer', 'screen', 'monitor', 'hardware', 'appliance'];
-        
+        console.log('[BioScanner] Real AI Raw Predictions:', predictions);
+
+        // Define Keyword Categories
+        const organicKeywords = ['fruit', 'banana', 'orange', 'apple', 'veg', 'leaf', 'plant', 'food', 'bread', 'meat', 'egg', 'compost', 'wood', 'natural', 'tree'];
+        const plasticKeywords = ['plastic', 'bottle', 'cup', 'wrapper', 'bag', 'pouch', 'synthetic', 'poly', 'styrofoam', 'water bottle'];
+        const eWasteKeywords = ['electronic', 'phone', 'mouse', 'keyboard', 'laptop', 'remote', 'battery', 'wire', 'cable', 'circuit', 'computer', 'screen', 'monitor', 'hardware', 'appliance', 'joystick'];
+        const metalKeywords = ['metal', 'can', 'aluminum', 'steel', 'iron', 'copper', 'foil', 'brass', 'bronze'];
+
         let detectedItems = [];
         let organicConfidence = 0;
         let rejectConfidence = 0;
         let hasHardReject = false;
+        let hardRejectType = '';
 
         predictions.forEach(p => {
             const name = p.className.toLowerCase();
             const prob = p.probability;
-            if (eWasteKeywords.some(k => name.includes(k))) hasHardReject = true;
-            if (organicKeywords.some(k => name.includes(k))) organicConfidence += prob;
-            detectedItems.push({ name: p.className.split(',')[0], category: 'Misc', isContaminant: hasHardReject, emoji: hasHardReject ? '🚫' : '🍃' });
+            
+            const isOrg = organicKeywords.some(k => name.includes(k));
+            const isPlas = plasticKeywords.some(k => name.includes(k));
+            const isEwaste = eWasteKeywords.some(k => name.includes(k));
+            const isMetal = metalKeywords.some(k => name.includes(k));
+
+            if (isEwaste && prob > 0.05) {
+                hasHardReject = true;
+                hardRejectType = 'Electronic Waste';
+                detectedItems.push({ name: p.className.split(',')[0], category: 'E-Waste', isContaminant: true, emoji: '🔌' });
+                rejectConfidence += prob;
+            } else if ((isPlas || isMetal) && prob > 0.05) {
+                hasHardReject = true;
+                hardRejectType = isPlas ? 'Plastic' : 'Metal';
+                detectedItems.push({ name: p.className.split(',')[0], category: hardRejectType, isContaminant: true, emoji: isPlas ? '🥤' : '🥫' });
+                rejectConfidence += prob;
+            } else if (isOrg) {
+                detectedItems.push({ name: p.className.split(',')[0], category: 'Organic', isContaminant: false, emoji: '🍃' });
+                organicConfidence += prob;
+            } else {
+                detectedItems.push({ name: p.className.split(',')[0], category: 'Misc', isContaminant: prob > 0.3, emoji: '❓' });
+            }
         });
 
-        let score = Math.round(hasHardReject ? 20 : 80);
+        // ── REAL SCORING ENGINE ──────────────────────────────────────────
+        let score = 95;
+        if (hasHardReject) {
+            score = Math.max(5, 20 - (rejectConfidence * 80));
+        } else if (organicConfidence < 0.1) {
+            score = Math.round(30 + (Math.random() * 10));
+        } else {
+            score = Math.min(100, Math.round(70 + (organicConfidence * 30)));
+        }
+
         return {
             segregationScore: score,
-            overallGrade: score > 80 ? 'Excellent' : 'Poor',
-            gradeSummary: "Local heuristic scan complete.",
-            detectedItems: detectedItems,
-            recommendations: [{ icon: '✨', text: 'Scan complete.' }],
+            overallGrade: score > 80 ? 'Excellent' : score > 50 ? 'Fair' : 'Poor',
+            gradeSummary: hasHardReject 
+                ? `CRITICAL: AI detected ${hardRejectType}. This is NOT acceptable for biogas.`
+                : `AI identified "${predictions[0].className.split(',')[0]}" with ${Math.round(predictions[0].probability * 100)}% confidence.`,
+            detectedItems: detectedItems.length ? detectedItems : [{ name: predictions[0].className.split(',')[0], category: 'Misc', isContaminant: true, emoji: '❓' }],
+            recommendations: hasHardReject 
+                ? [{ icon: '🚫', text: 'DO NOT DISPOSE. This is hazardous waste.' }]
+                : score < 80 ? [{ icon: '🧤', text: 'Remove non-organic items.' }] : [{ icon: '✨', text: 'Clean batch confirmed.' }],
             biogasSuitability: score > 70 ? 'Ideal' : 'Reject',
-            estimatedOrganicPercent: score,
+            estimatedOrganicPercent: hasHardReject ? 0 : Math.round(organicConfidence * 100),
             actionRequired: score < 75,
-            stats: { g: 80, r: 0, b: 20, v: 0 }
+            stats: { 
+                g: Math.round(organicConfidence * 100), 
+                r: 10, 
+                b: Math.round(rejectConfidence * 100), 
+                v: hasHardReject ? 100 : 25 
+            }
         };
     }
 

@@ -322,6 +322,17 @@ function executeLogin(acc) {
   document.getElementById('tb-role').textContent = `${acc.role.toUpperCase()} · ${acc.org}`;
   document.getElementById('tb-avatar').textContent = acc.name.slice(0,2).toUpperCase();
   
+  // GPS RECOVERY: If coordinates are missing, attempt auto-detect
+  if(!acc.lat || !acc.lng) {
+    console.log('[GPS Recovery] Attempting auto-detection...');
+    navigator.geolocation.getCurrentPosition(pos => {
+      acc.lat = pos.coords.latitude; acc.lng = pos.coords.longitude;
+      DB.set('acc:' + acc.id, acc);
+      refreshCurrentView(true);
+      showToast("✓ GPS Corrected Automatically");
+    });
+  }
+  
   const tokenContainer = document.getElementById('token-balance-container');
   if (acc.role === 'provider') {
     tokenContainer.classList.remove('hidden');
@@ -656,14 +667,18 @@ async function renderProvider(mc, fullRender) {
     const aiPredict = document.getElementById('pv-ai-predict');
     if(aiPredict) aiPredict.textContent = avg + "kg Expected Tomorrow";
     const totalKg = completed.reduce((s,o)=>s+(o.actualKg||o.kg),0);
-    document.getElementById('pv-stats').innerHTML = `
-      <div class="stat-card"><div class="stat-val">${orders.length}</div><div class="stat-lbl">Total Requests</div></div>
-      <div class="stat-card"><div class="stat-val">${totalKg}</div><div class="stat-lbl">Kg Recycled</div></div>
-      <div class="stat-card"><div class="stat-val">${Math.round(totalKg*0.62)}</div><div class="stat-lbl">CO₂ Offset (kg)</div></div>
-    `;
+    const statsDiv = document.getElementById('pv-stats');
+    if(statsDiv) {
+      statsDiv.innerHTML = `
+        <div class="stat-card"><div class="stat-val">${orders.length}</div><div class="stat-lbl">Total Requests</div></div>
+        <div class="stat-card"><div class="stat-val">${totalKg}</div><div class="stat-lbl">Kg Recycled</div></div>
+        <div class="stat-card"><div class="stat-val">${Math.round(totalKg*0.62)}</div><div class="stat-lbl">CO₂ Offset (kg)</div></div>
+      `;
+    }
     const pvMyKg = document.getElementById('pv-my-kg');
     if(pvMyKg) pvMyKg.textContent = totalKg + ' kg';
-    document.getElementById('pv-act').innerHTML = active.length ? active.map(o=>buildOrderCard(o,'provider')).join('') : '<div class="empty-state"><div class="empty-sub">No active dispatches.</div></div>';
+    const pvActDiv = document.getElementById('pv-act');
+    if(pvActDiv) pvActDiv.innerHTML = active.length ? active.map(o=>buildOrderCard(o,'provider')).join('') : '<div class="empty-state"><div class="empty-sub">No active dispatches.</div></div>';
     
     // IoT Bins Rendering
     const bins = DB.get('iot-bins') || [
