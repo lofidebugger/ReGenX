@@ -1,6 +1,7 @@
 // ══════════════════════════════════════
 // ReGenX v3 — Unified Premium Logic
 // ══════════════════════════════════════
+import { CloudSync } from './cloud-sync.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 
@@ -431,7 +432,12 @@ window.toggleSidebar = function(force) {
 // ── CORE DATA ENGINE ──
 function getAllOrders() { return DB.list('ord:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 function getOrder(id) { return DB.get('ord:'+id); }
-function saveOrder(o) { DB.set('ord:'+o.id, o); }
+function saveOrder(o) { 
+  DB.set('ord:'+o.id, o); 
+  if (window.CloudSync && window.CloudSync.isLive) {
+      window.CloudSync.pushDocument('orders', o);
+  }
+}
 function getAllLogs() { return DB.list('log:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 
 // Generic Order Card Component
@@ -1825,3 +1831,8 @@ window.iotDispatchFromBin = function(id) {
 
 document.getElementById('login-screen').style.display = 'flex';
 switchAuthTab('login');
+
+// Initialize Cloud Sync Engine
+setTimeout(() => {
+    if (window.CloudSync) window.CloudSync.init();
+}, 1000);
