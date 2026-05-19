@@ -1,21 +1,20 @@
-# PR: Zero-Knowledge Audit Portal and Carbon Ledger
+# PR: Real-Time Dispatch Integrity & Trust Ledger
 
 ## Summary
-- Add a public verification portal that reads/writes the audit registry in localStorage (`audit-registry`).
-- Seed the registry with verified hashes for immediate auditor testing.
-- Hook ESG PDF generation into the registry with SHA-256 length hashes.
-- Add glassmorphic audit UI helpers and micro-animations.
-- Expose Public Verification in the sidebar for all roles.
+- Add a public trust ledger for custody events (`trust-ledger`).
+- Record integrity events on each order lifecycle transition.
+- Provide integrity scan modal with timeline and trust score.
+- Display a Public Trust Index widget across all dashboards.
 
 ## Changes
-- Audit portal module updates, registry helpers, and verification flow.
-- ESG reporter updates for audit hash generation and registry persistence.
-- Sidebar label updates across roles.
-- New audit portal styles (spinner, fade-in-up, registry items).
+- Extend TrustProtocol with integrity scoring and route deviation analysis.
+- Add ledger helpers, integrity scoring, and scan UI wiring in `app.js`.
+- Add integrity timeline and trust index styles.
+- Add new issue spec in `ISSUE-12.md`.
 
 ## Testing
-- Manual: Open Public Verification, copy a seed hash, and verify success.
-- Manual: Generate an ESG PDF report and verify its hash in the portal.
+- Manual: Create a dispatch, progress through rider/plant steps, then run Integrity Scan.
+- Manual: Confirm trust index appears on Provider/Rider/Plant dashboards.
 
 ## Checklist
 - [x] UI verified across Provider, Rider, Plant.
