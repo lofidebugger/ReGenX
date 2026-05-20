@@ -1343,6 +1343,8 @@ function renderSparkline(values = [], tone = 'active') {
     return `<span class="spark-bar ${index === values.length - 1 ? 'is-last' : ''}" style="height:${height}%;"></span>`;
   }).join('');
   return `<div class="metric-sparkline metric-sparkline-${tone}">${bars}</div>`;
+}
+
 function buildStatusStepper(status) {
   if (status === 'rejected') return '';
   const steps = [
@@ -1580,13 +1582,14 @@ function renderCompliance(mc, fullRender) {
                 <button class="btn btn-ghost btn-sm" onclick="resolveEsgAlert('${a.id}')">Resolve</button>
               </div>
             </div>
-          `).join('') : '<div class="empty-state">No active alerts.</div>'}
-        </div>
-      </div>
-
-      <div class="glass-card compliance-card">
-        <div class="between" style="margin-bottom:12px;">
-          <h4 style="font-size:16px;">Resolved Alerts</h4>
+      `).join('') : renderDashboardListState({
+        icon: '🛡️',
+        title: 'No active alerts',
+        description: 'All compliance checks are clear for now.',
+        subtext: 'New alerts will appear here when issues are detected.',
+        statusLabel: 'Idle',
+        tone: 'inactive'
+      })}
           <span class="badge badge-green">${resolvedAlerts.length} Done</span>
         </div>
         <div class="compliance-list">
@@ -1598,7 +1601,14 @@ function renderCompliance(mc, fullRender) {
               </div>
               <span class="badge badge-green">RESOLVED</span>
             </div>
-          `).join('') : '<div class="empty-state">No resolved alerts yet.</div>'}
+          `).join('') : renderDashboardListState({
+            icon: '✅',
+            title: 'No resolved alerts yet',
+            description: 'There are no resolved compliance alerts to display.',
+            subtext: 'Resolved alerts will appear here once issues are closed.',
+            statusLabel: 'Idle',
+            tone: 'inactive'
+          })}
         </div>
       </div>
     </div>
@@ -1645,7 +1655,14 @@ function renderReconciliation(mc, fullRender) {
             </div>
             <span class="badge ${e.deltaPct >= 8 ? 'badge-red' : 'badge-green'}">${e.deltaPct >= 8 ? 'FLAG' : 'OK'}</span>
           </div>
-        `).join('') : '<div class="empty-state">No reconciliation entries yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '🧾',
+          title: 'No reconciliation entries',
+          description: 'There are no credit ledger entries to review yet.',
+          subtext: 'Recorded carbon credits will populate this list once available.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1700,7 +1717,14 @@ function renderSlaMonitor(mc, fullRender) {
               <span class="badge ${badge}">${status}</span>
             </div>
           `;
-        }).join('') : '<div class="empty-state">No SLA entries yet.</div>'}
+        }).join('') : renderDashboardListState({
+          icon: '⏱️',
+          title: 'No SLA entries yet',
+          description: 'No dispatch SLA records are available right now.',
+          subtext: 'Active and completed dispatch SLAs will appear in this section.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1745,7 +1769,13 @@ function renderEnergyScorecard(mc, fullRender) {
             </div>
             <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
           </div>
-        `).join('') : '<div class="empty-state">No energy records yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '⚡',
+          title: 'No energy records yet',
+          description: 'Energy yield data will appear once bio-waste batches are processed.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1790,7 +1820,13 @@ function renderSensorReliability(mc, fullRender) {
             </div>
             <span class="badge ${e.score >= 90 ? 'badge-green' : e.score >= 75 ? 'badge-blue' : e.score >= 60 ? 'badge-amber' : 'badge-red'}">${e.score}%</span>
           </div>
-        `).join('') : '<div class="empty-state">No sensor snapshots yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '📡',
+          title: 'No sensor snapshots yet',
+          description: 'Sensor health snapshots will appear as devices report data.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1835,7 +1871,13 @@ function renderEmissionsTracker(mc, fullRender) {
             </div>
             <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
           </div>
-        `).join('') : '<div class="empty-state">No emissions records yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '🌍',
+          title: 'No emissions records yet',
+          description: 'Tracked emissions routes will appear here after the first runs.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -2143,7 +2185,14 @@ async function renderProvider(mc, fullRender) {
       </div>
       <div id="pv-hist-list"></div>
     `;
-    document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : `<div class="empty-state"><div class="empty-sub">No completed history in the last ${limitDays} days.</div></div>`;
+    document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : renderDashboardListState({
+      icon: '📦',
+      title: `No completed history in the last ${limitDays} days`,
+      description: 'No provider order history was recorded during this period.',
+      subtext: 'Completed dispatches will display here once available.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
   }
 }
 
@@ -3446,13 +3495,14 @@ function renderIoT(mc, fullRender) {
 
     <!-- Bin Cards Grid -->
     <div class="iot-bins-grid" id="iot-bins-grid">
-      ${bins.length ? bins.map(buildBinCard).join('') : `
-        <div class="empty-state" style="grid-column:1/-1;">
-          <div class="empty-icon">🗑️</div>
-          <div class="empty-title">No bins connected</div>
-          <div class="empty-sub">Click <strong>+ Add Bin</strong> to register your first IoT sensory bin.</div>
-        </div>`}
-    </div>
+      ${bins.length ? bins.map(buildBinCard).join('') : renderDashboardListState({
+        icon: '🗑️',
+        title: 'No bins connected',
+        description: 'Register your first IoT bin to begin monitoring waste fill levels.',
+        actionHtml: '<button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')">Add Bin</button>',
+        statusLabel: 'Idle',
+        tone: 'inactive'
+      })}
 
     <!-- Network telemetry footer -->
     <div class="glass-card sensor-card" style="margin-top:28px; padding:20px;">
