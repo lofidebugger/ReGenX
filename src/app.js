@@ -13,6 +13,7 @@ const ESG_ALERTS_KEY = "esg-alerts";
 const CREDIT_LEDGER_KEY = "credit-ledger";
 const SLA_LEDGER_KEY = "sla-ledger";
 const ENERGY_LEDGER_KEY = "energy-ledger";
+const SENSOR_LEDGER_KEY = "sensor-ledger";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -643,6 +644,77 @@ function renderEnergyWidget() {
   `;
 }
 
+/**
+ * Load sensor reliability snapshots.
+ * @returns {Array<Object>} Sensor snapshots.
+ */
+function loadSensorLedger() {
+  try {
+    const raw = window.localStorage.getItem(SENSOR_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save sensor reliability snapshots.
+ * @param {Array<Object>} entries - Sensor snapshots.
+ */
+function saveSensorLedger(entries) {
+  try { window.localStorage.setItem(SENSOR_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a new sensor reliability snapshot.
+ * @param {Object} snapshot - Snapshot payload.
+ */
+function addSensorSnapshot(snapshot) {
+  const entries = loadSensorLedger();
+  entries.push(snapshot);
+  saveSensorLedger(entries.slice(-50));
+}
+
+/**
+ * Calculate sensor reliability summary.
+ * @returns {{score:number, offlineCount:number, total:number}}
+ */
+function getSensorReliabilitySummary() {
+  const bins = getIoTBins();
+  const total = bins.length;
+  if (!total) return { score: 100, offlineCount: 0, staleCount: 0, total: 0 };
+  const offlineCount = bins.filter(b => b.status === 'offline').length;
+  const staleCount = bins.filter(b => b.lastReading && (Date.now() - b.lastReading) > 600000).length;
+  const score = Math.max(0, Math.round(100 - ((offlineCount + staleCount) / total) * 100));
+  return { score, offlineCount, staleCount, total };
+}
+
+/**
+ * Render sensor reliability widget.
+ * @returns {string} HTML string.
+ */
+function renderSensorWidget() {
+  const summary = getSensorReliabilitySummary();
+  const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card sensor-reliability-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Sensor Reliability Index</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.score}% Network Health</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.offlineCount} offline</span>
+      </div>
+      <div class="sensor-reliability-bar"><span style="width:${summary.score}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.total} sensors monitored</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-sensor')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function ts() { return Date.now(); }
 function fmtDate(ms) { return new Date(ms).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
@@ -1009,6 +1081,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1023,6 +1096,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -1036,6 +1110,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -1049,7 +1124,7 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard' };
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability' };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -1300,6 +1375,10 @@ async function refreshCurrentView(fullRender = false) {
   }
   if (currentView === 'v-energy') {
     renderEnergyScorecard(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-sensor') {
+    renderSensorReliability(mc, fullRender);
     return;
   }
   if (currentView === 'v-market') {
@@ -1594,6 +1673,51 @@ function renderEnergyScorecard(mc, fullRender) {
   `;
 }
 
+/**
+ * Render sensor reliability view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderSensorReliability(mc, fullRender) {
+  const entries = loadSensorLedger().sort((a, b) => b.ts - a.ts);
+  const summary = getSensorReliabilitySummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Sensor Reliability Index</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Monitor IoT sensor uptime, freshness, and health.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.total}</div><div class="stat-lbl">Total Sensors</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.offlineCount}</div><div class="stat-lbl">Offline</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.score}%</div><div class="stat-lbl">Reliability</div></div>
+      <div class="stat-card"><div class="stat-val">${entries.length}</div><div class="stat-lbl">Snapshots</div></div>
+    </div>
+
+    <div class="glass-card sensor-reliability-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Health Snapshots</h4>
+        <span class="badge badge-blue">10-min freshness</span>
+      </div>
+      <div class="sensor-reliability-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="sensor-reliability-item">
+            <div>
+              <div class="sensor-reliability-title">${e.total} sensors · ${e.offlineCount} offline · ${e.staleCount} stale</div>
+              <div class="sensor-reliability-sub">${fmtDate(e.ts)}</div>
+            </div>
+            <span class="badge ${e.score >= 90 ? 'badge-green' : e.score >= 75 ? 'badge-blue' : e.score >= 60 ? 'badge-amber' : 'badge-red'}">${e.score}%</span>
+          </div>
+        `).join('') : '<div class="empty-state">No sensor snapshots yet.</div>'}
+      </div>
+    </div>
+  `;
+}
+
 // ════════ PROVIDER LOGIC ════════
 async function renderProvider(mc, fullRender) {
   const orders = getAllOrders().filter(o => o.providerId === SESSION.id);
@@ -1618,6 +1742,7 @@ async function renderProvider(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -2176,6 +2301,7 @@ async function renderRider(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -2653,6 +2779,7 @@ async function renderPlant(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -3028,6 +3155,15 @@ function startIoTSim() {
     if (changed) {
       saveIoTBins(bins);
       syncIoTAlertBadge();
+      const summary = getSensorReliabilitySummary();
+      addSensorSnapshot({
+        id: 'sensor-' + uid(),
+        ts: ts(),
+        score: summary.score,
+        offlineCount: summary.offlineCount,
+        staleCount: summary.staleCount,
+        total: summary.total
+      });
       // If user is watching the IoT view, refresh the fill bars without full re-render
       if (currentView === 'v-iot-bins') iotLiveUpdate(bins);
     }
