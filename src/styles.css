@@ -123,6 +123,7 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
   overflow: hidden;
+  margin: 20px 0px;
 }
 .glass-card:hover { 
   box-shadow: 0 20px 40px -10px rgba(13, 148, 136, 0.25); 
@@ -220,13 +221,13 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
 .main-area { flex: 1; display: flex; flex-direction: column; overflow-y: auto; height: 100vh; position: relative; }
 .topbar { height: 72px; display: flex; justify-content: space-between; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 40; }
 .glass-nav { background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-.topbar-title { font-size: 22px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; margin-left: 8px;background: -webkit-linear-gradient(45deg, var(--green), var(--blue)); -webkit-background-clip: text;
+.topbar-title { font-size: 20px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; margin-left: 42px;background: -webkit-linear-gradient(45deg, var(--green), var(--blue)); -webkit-background-clip: text;
   background-clip: text;                /* standard property — fixes Firefox warning */
   -webkit-text-fill-color: transparent;
   color: transparent; }
-.topbar-user { display: flex; align-items: center; gap: 16px; }
-.topbar-name { font-weight: 600; font-size: 14px; }
-.topbar-role { font-size: 12px; color: var(--text-muted); text-transform: capitalize; }
+.topbar-user { display: flex; align-items: center; gap: 10px; }
+.topbar-name { font-weight: 600; font-size: 10px; }
+.topbar-role { font-size: 7px; color: var(--text-muted); text-transform: capitalize; }
 .topbar-avatar { width: 40px; height: 40px; border-radius: 12px; background: var(--green-light); color: var(--green); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
 
 .content-wrapper { padding: 32px; flex: 1; overflow: visible; }
@@ -246,23 +247,25 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
   justify-content: space-between;
   gap: 16px;
   min-height: 180px;
+  
 }
 .dashboard-state-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 .dashboard-state-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--surface-hover);
   font-size: 18px;
   flex: 0 0 auto;
+  margin-left: 10px;
 }
 .dashboard-state-body {
   display: flex;
@@ -270,20 +273,24 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
   gap: 8px;
 }
 .dashboard-state-title {
+  align-items: center;
   font-family: 'Space Grotesk';
   font-size: 18px;
   font-weight: 700;
   color: var(--text);
+  padding-left: 20px;
 }
 .dashboard-state-desc {
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--text-muted);
+  padding: 0px 20px;
 }
 .dashboard-state-sub {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-muted);
+  padding: 0px 20px;
 }
 .dashboard-state-actions {
   display: flex;
@@ -295,13 +302,14 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   white-space: nowrap;
+  margin-right: 10px;
 }
 .status-badge-active { background: var(--green-light); color: var(--green-hover); }
 .status-badge-warning { background: rgba(245, 158, 11, 0.12); color: #92400e; }
@@ -379,9 +387,9 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
 }
 .dashboard-state-empty,
 .dashboard-state-error {
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-hover) 100%);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-hover) 100%); 
 }
-.dashboard-state-empty { border-top: 4px solid var(--border); }
+.dashboard-state-empty { border-top: 4px solid var(--border); padding-bottom: 5px; border-radius: 10px; overflow: hidden; }
 .dashboard-state-empty .dashboard-state-icon { color: var(--text-muted); }
 .dashboard-state-error { border-top: 4px solid var(--red); }
 .dashboard-state-error .dashboard-state-icon { color: var(--red); }
@@ -728,9 +736,10 @@ tr:hover td { background: var(--bg); }
 
 .token-balance {
   background: var(--surface); border: 1px solid var(--amber); border-radius: 12px;
-  padding: 6px 12px; font-family: 'Space Grotesk'; font-size: 16px; font-weight: 700;
+  padding: 2px 4px; font-family: 'Space Grotesk'; font-size: 8px; font-weight: 700;
   color: var(--amber); box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
   display: flex; align-items: center; gap: 6px; animation: glow-amber 3s infinite alternate;
+  margin: 3px;
 }
 
 @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
@@ -856,7 +865,7 @@ tr:hover td { background: var(--bg); }
 
   .main-area { width: 100%; height: 100vh; overflow-y: auto; }
   .topbar { 
-    padding-left: 64px !important; 
+  
     position: sticky; 
     top: 0; 
     z-index: 999; 
@@ -869,14 +878,14 @@ tr:hover td { background: var(--bg); }
   .hamburger {
     display: flex !important;
     position: absolute;
-    left: 16px;
+    left:0pz;
     top: 50%;
     transform: translateY(-50%);
     z-index: 1001;
     cursor: pointer;
-    font-size: 28px;
+    font-size: 20px;
     color: var(--green);
-    background: var(--green-light);
+    /* background: var(--green-light); */
     width: 40px;
     height: 40px;
     align-items: center;
