@@ -3185,8 +3185,11 @@ window.confirmPlantReceipt = function(id) {
          document.getElementById('token-balance').textContent = SESSION.tokens;
      }
 
-     const expectedTokens = TrustProtocol.calculateReward(baseTokens, trustScore);
-     const deltaPct = expectedTokens ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
+     // Expected tokens represent the base (non-trust-multiplied) reward.
+     // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
+     // the trust bonus/penalty percentage (and enables mismatch flagging).
+     const expectedTokens = baseTokens;
+     const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
      addCreditEntry({
        id: 'credit-' + uid(),
        orderId: o.id,
