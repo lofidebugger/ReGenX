@@ -7,6 +7,7 @@ import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
 import { ReGenXRealtime } from './realtime-sync.js';
+import { CloudSync } from './cloud-sync.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
@@ -14,6 +15,9 @@ const ESG_ALERTS_KEY = "esg-alerts";
 const CREDIT_LEDGER_KEY = "credit-ledger";
 const SLA_LEDGER_KEY = "sla-ledger";
 const ENERGY_LEDGER_KEY = "energy-ledger";
+const SENSOR_LEDGER_KEY = "sensor-ledger";
+const EMISSIONS_LEDGER_KEY = "emissions-ledger";
+const QUALITY_LEDGER_KEY = "quality-ledger";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -689,6 +693,216 @@ function renderEnergyWidget() {
   `;
 }
 
+/**
+ * Load sensor reliability snapshots.
+ * @returns {Array<Object>} Sensor snapshots.
+ */
+function loadSensorLedger() {
+  try {
+    const raw = window.localStorage.getItem(SENSOR_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save sensor reliability snapshots.
+ * @param {Array<Object>} entries - Sensor snapshots.
+ */
+function saveSensorLedger(entries) {
+  try { window.localStorage.setItem(SENSOR_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a new sensor reliability snapshot.
+ * @param {Object} snapshot - Snapshot payload.
+ */
+function addSensorSnapshot(snapshot) {
+  const entries = loadSensorLedger();
+  entries.push(snapshot);
+  saveSensorLedger(entries.slice(-50));
+}
+
+/**
+ * Calculate sensor reliability summary.
+ * @returns {{score:number, offlineCount:number, total:number}}
+ */
+function getSensorReliabilitySummary() {
+  const bins = getIoTBins();
+  const total = bins.length;
+  if (!total) return { score: 100, offlineCount: 0, staleCount: 0, total: 0 };
+  const offlineCount = bins.filter(b => b.status === 'offline').length;
+  const staleCount = bins.filter(b => b.lastReading && (Date.now() - b.lastReading) > 600000).length;
+  const score = Math.max(0, Math.round(100 - ((offlineCount + staleCount) / total) * 100));
+  return { score, offlineCount, staleCount, total };
+}
+
+/**
+ * Render sensor reliability widget.
+ * @returns {string} HTML string.
+ */
+function renderSensorWidget() {
+  const summary = getSensorReliabilitySummary();
+  const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card sensor-reliability-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Sensor Reliability Index</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.score}% Network Health</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.offlineCount} offline</span>
+      </div>
+      <div class="sensor-reliability-bar"><span style="width:${summary.score}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.total} sensors monitored</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-sensor')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Load emissions ledger entries.
+ * @returns {Array<Object>} Emissions entries.
+ */
+function loadEmissionsLedger() {
+  try {
+    const raw = window.localStorage.getItem(EMISSIONS_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save emissions ledger entries.
+ * @param {Array<Object>} entries - Emissions entries.
+ */
+function saveEmissionsLedger(entries) {
+  try { window.localStorage.setItem(EMISSIONS_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a new emissions ledger entry.
+ * @param {Object} entry - Emissions entry.
+ */
+function addEmissionsEntry(entry) {
+  const entries = loadEmissionsLedger();
+  entries.push(entry);
+  saveEmissionsLedger(entries);
+}
+
+/**
+ * Summarize emissions ledger.
+ * @returns {{total:number, totalEmissions:number, totalOffset:number, avgScore:number}}
+ */
+function getEmissionsSummary() {
+  const entries = loadEmissionsLedger();
+  if (!entries.length) return { total: 0, totalEmissions: 0, totalOffset: 0, avgScore: 0 };
+  const totalEmissions = entries.reduce((s, e) => s + e.emissionKg, 0);
+  const totalOffset = entries.reduce((s, e) => s + e.offsetKg, 0);
+  const avgScore = Math.round(entries.reduce((s, e) => s + e.score, 0) / entries.length);
+  return { total: entries.length, totalEmissions: Math.round(totalEmissions), totalOffset: Math.round(totalOffset), avgScore };
+}
+
+/**
+ * Render emissions tracker widget.
+ * @returns {string} HTML string.
+ */
+function renderEmissionsWidget() {
+  const summary = getEmissionsSummary();
+  const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card emissions-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Route Emissions Tracker</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.avgScore || '--'} / 100</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.totalEmissions} kg CO₂</span>
+      </div>
+      <div class="emissions-bar"><span style="width:${summary.avgScore}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.totalOffset} kg offset</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-emissions')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Load compost quality ledger entries.
+ * @returns {Array<Object>} Quality entries.
+ */
+function loadQualityLedger() {
+  try {
+    const raw = window.localStorage.getItem(QUALITY_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save compost quality ledger entries.
+ * @param {Array<Object>} entries - Quality entries.
+ */
+function saveQualityLedger(entries) {
+  try { window.localStorage.setItem(QUALITY_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a compost quality ledger entry.
+ * @param {Object} entry - Quality entry.
+ */
+function addQualityEntry(entry) {
+  const entries = loadQualityLedger();
+  entries.push(entry);
+  saveQualityLedger(entries);
+}
+
+/**
+ * Summarize compost quality metrics.
+ * @returns {{total:number, avgScore:number, lowCount:number}}
+ */
+function getQualitySummary() {
+  const entries = loadQualityLedger();
+  if (!entries.length) return { total: 0, avgScore: 0, lowCount: 0 };
+  const avgScore = Math.round(entries.reduce((s, e) => s + e.score, 0) / entries.length);
+  const lowCount = entries.filter(e => e.score < 60).length;
+  return { total: entries.length, avgScore, lowCount };
+}
+
+/**
+ * Render compost quality widget.
+ * @returns {string} HTML string.
+ */
+function renderQualityWidget() {
+  const summary = getQualitySummary();
+  const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card quality-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Compost Quality Index</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.avgScore || '--'} / 100</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.lowCount} low</span>
+      </div>
+      <div class="quality-bar"><span style="width:${summary.avgScore}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.total} batches graded</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-quality')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function ts() { return Date.now(); }
 function fmtDate(ms) { return new Date(ms).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
@@ -749,6 +963,109 @@ window.toggleTheme = function() {
 }
 const savedTheme = window.localStorage.getItem('regenx-theme') || 'light';
 document.documentElement.setAttribute('data-theme', savedTheme);
+
+// ══════════════════════════════════════
+// GOOGLE AUTH
+// ══════════════════════════════════════
+
+window.initGoogleAuth = function () {
+
+  if (!window.google) {
+    console.error("Google SDK not loaded");
+    return;
+  }
+
+  google.accounts.id.initialize({
+
+    client_id:
+      "661991506161-rb6j5n5klovjupfal1ip2qstcu0k366a.apps.googleusercontent.com",
+
+    callback:
+      handleGoogleLogin
+  });
+
+  // RENDER GOOGLE BUTTON
+  google.accounts.id.renderButton(
+
+    document.getElementById(
+      "google-login-btn"
+    ),
+
+    {
+      theme: "outline",
+      size: "large",
+      width: 280
+    }
+  );
+};
+
+function handleGoogleLogin(response) {
+
+  const token =
+    response.credential;
+
+  const payload =
+    JSON.parse(
+      atob(token.split('.')[1])
+    );
+
+  const acc = {
+
+    id: uid(),
+
+    role: "provider",
+
+    name: payload.name,
+
+    org: payload.email,
+
+    email: payload.email,
+
+    avatar: payload.picture,
+
+    lat: 28.5355,
+
+    lng: 77.3910,
+
+    tokens: 0,
+
+    authProvider: "google"
+  };
+
+  // SAVE ACCOUNT
+ const existing = DB
+  .list('acc:')
+  .map(k => DB.get(k))
+  .find(u => u.email === acc.email);
+
+if(existing){
+
+  executeLogin(existing);
+
+}else{
+
+  DB.set('acc:' + acc.id, acc);
+
+  executeLogin(acc);
+}
+
+  // LOGIN DIRECTLY
+  executeLogin(acc);
+
+  showToast(
+    `✓ Welcome ${acc.name}`
+  );
+}
+
+// AUTO LOGIN CHECK
+window.addEventListener("DOMContentLoaded", () => {
+
+  setTimeout(() => {
+
+    initGoogleAuth();
+
+  }, 500);
+});
 
 // ── AUTH & REGISTRATION ──
 window.switchAuthTab = function(tab) {
@@ -1063,6 +1380,9 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
+      <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1077,6 +1397,9 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
+      <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -1090,6 +1413,9 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-sla')" id="nav-v-sla"><span class="nav-item-icon">⏱️</span> SLA Monitor</button>
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
+      <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
+      <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -1104,7 +1430,7 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard' };
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker', 'v-quality': 'Quality Index' };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -1247,6 +1573,7 @@ function renderSparkline(values = [], tone = 'active') {
   }).join('');
   return `<div class="metric-sparkline metric-sparkline-${tone}">${bars}</div>`;
 }
+
 function buildStatusStepper(status) {
   if (status === 'rejected') return '';
   const steps = [
@@ -1305,7 +1632,7 @@ function buildOrderCard(o, role) {
     acts = `<button class="btn btn-primary btn-sm" onclick="openPlantConfirm('${o.id}')">Confirm Receipt ✓</button>`;
   }
   if (['provider', 'rider', 'plant'].includes(role) && o.status === 'completed') {
-    acts += `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder('${o.id}')" style="margin-left:auto;">🗑 Delete Record</button>`;
+    acts += `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder('${o.id}')">🗑 Delete Record</button>`;
   }
 
   acts += `<button class="btn btn-ghost btn-sm" onclick="openIntegrityScan('${o.id}')">🛡 Integrity Scan</button>`;
@@ -1353,6 +1680,18 @@ async function refreshCurrentView(fullRender = false) {
   }
   if (currentView === 'v-energy') {
     renderEnergyScorecard(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-sensor') {
+    renderSensorReliability(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-emissions') {
+    renderEmissionsTracker(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-quality') {
+    renderQualityIndex(mc, fullRender);
     return;
   }
   if (currentView === 'v-market') {
@@ -1476,13 +1815,14 @@ function renderCompliance(mc, fullRender) {
                 <button class="btn btn-ghost btn-sm" onclick="resolveEsgAlert('${a.id}')">Resolve</button>
               </div>
             </div>
-          `).join('') : '<div class="empty-state">No active alerts.</div>'}
-        </div>
-      </div>
-
-      <div class="glass-card compliance-card">
-        <div class="between" style="margin-bottom:12px;">
-          <h4 style="font-size:16px;">Resolved Alerts</h4>
+      `).join('') : renderDashboardListState({
+        icon: '🛡️',
+        title: 'No active alerts',
+        description: 'All compliance checks are clear for now.',
+        subtext: 'New alerts will appear here when issues are detected.',
+        statusLabel: 'Idle',
+        tone: 'inactive'
+      })}
           <span class="badge badge-green">${resolvedAlerts.length} Done</span>
         </div>
         <div class="compliance-list">
@@ -1494,7 +1834,14 @@ function renderCompliance(mc, fullRender) {
               </div>
               <span class="badge badge-green">RESOLVED</span>
             </div>
-          `).join('') : '<div class="empty-state">No resolved alerts yet.</div>'}
+          `).join('') : renderDashboardListState({
+            icon: '✅',
+            title: 'No resolved alerts yet',
+            description: 'There are no resolved compliance alerts to display.',
+            subtext: 'Resolved alerts will appear here once issues are closed.',
+            statusLabel: 'Idle',
+            tone: 'inactive'
+          })}
         </div>
       </div>
     </div>
@@ -1541,7 +1888,14 @@ function renderReconciliation(mc, fullRender) {
             </div>
             <span class="badge ${e.deltaPct >= 8 ? 'badge-red' : 'badge-green'}">${e.deltaPct >= 8 ? 'FLAG' : 'OK'}</span>
           </div>
-        `).join('') : '<div class="empty-state">No reconciliation entries yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '🧾',
+          title: 'No reconciliation entries',
+          description: 'There are no credit ledger entries to review yet.',
+          subtext: 'Recorded carbon credits will populate this list once available.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1596,7 +1950,14 @@ function renderSlaMonitor(mc, fullRender) {
               <span class="badge ${badge}">${status}</span>
             </div>
           `;
-        }).join('') : '<div class="empty-state">No SLA entries yet.</div>'}
+        }).join('') : renderDashboardListState({
+          icon: '⏱️',
+          title: 'No SLA entries yet',
+          description: 'No dispatch SLA records are available right now.',
+          subtext: 'Active and completed dispatch SLAs will appear in this section.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
       </div>
     </div>
   `;
@@ -1641,7 +2002,160 @@ function renderEnergyScorecard(mc, fullRender) {
             </div>
             <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
           </div>
-        `).join('') : '<div class="empty-state">No energy records yet.</div>'}
+        `).join('') : renderDashboardListState({
+          icon: '⚡',
+          title: 'No energy records yet',
+          description: 'Energy yield data will appear once bio-waste batches are processed.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render sensor reliability view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderSensorReliability(mc, fullRender) {
+  const entries = loadSensorLedger().sort((a, b) => b.ts - a.ts);
+  const summary = getSensorReliabilitySummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Sensor Reliability Index</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Monitor IoT sensor uptime, freshness, and health.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.total}</div><div class="stat-lbl">Total Sensors</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.offlineCount}</div><div class="stat-lbl">Offline</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.score}%</div><div class="stat-lbl">Reliability</div></div>
+      <div class="stat-card"><div class="stat-val">${entries.length}</div><div class="stat-lbl">Snapshots</div></div>
+    </div>
+
+    <div class="glass-card sensor-reliability-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Health Snapshots</h4>
+        <span class="badge badge-blue">10-min freshness</span>
+      </div>
+      <div class="sensor-reliability-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="sensor-reliability-item">
+            <div>
+              <div class="sensor-reliability-title">${e.total} sensors · ${e.offlineCount} offline · ${e.staleCount} stale</div>
+              <div class="sensor-reliability-sub">${fmtDate(e.ts)}</div>
+            </div>
+            <span class="badge ${e.score >= 90 ? 'badge-green' : e.score >= 75 ? 'badge-blue' : e.score >= 60 ? 'badge-amber' : 'badge-red'}">${e.score}%</span>
+          </div>
+        `).join('') : renderDashboardListState({
+          icon: '📡',
+          title: 'No sensor snapshots yet',
+          description: 'Sensor health snapshots will appear as devices report data.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render emissions tracker view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderEmissionsTracker(mc, fullRender) {
+  const entries = loadEmissionsLedger().sort((a, b) => b.ts - a.ts);
+  const summary = getEmissionsSummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Route Emissions Tracker</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Compare logistics emissions against verified offset impact.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.total}</div><div class="stat-lbl">Tracked Routes</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.totalEmissions}</div><div class="stat-lbl">CO₂ Emitted (kg)</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.totalOffset}</div><div class="stat-lbl">CO₂ Offset (kg)</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.avgScore || 0}</div><div class="stat-lbl">Efficiency Score</div></div>
+    </div>
+
+    <div class="glass-card emissions-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Routes</h4>
+        <span class="badge badge-blue">Logistics Footprint</span>
+      </div>
+      <div class="emissions-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="emissions-item">
+            <div>
+              <div class="emissions-title">${e.org} · ${e.distanceKm} km</div>
+              <div class="emissions-sub">${e.emissionKg} kg emitted · ${e.offsetKg} kg offset · ${fmtDate(e.ts)}</div>
+            </div>
+            <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
+          </div>
+        `).join('') : renderDashboardListState({
+          icon: '🌍',
+          title: 'No emissions records yet',
+          description: 'Tracked emissions routes will appear here after the first runs.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        })}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render compost quality index view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderQualityIndex(mc, fullRender) {
+  const entries = loadQualityLedger().sort((a, b) => b.ts - a.ts);
+  const summary = getQualitySummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Compost Quality Index</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Track segregation scores and compost quality outcomes.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.total}</div><div class="stat-lbl">Graded Batches</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.avgScore || 0}</div><div class="stat-lbl">Avg Score</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.lowCount}</div><div class="stat-lbl">Low Quality</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.total ? Math.round((summary.lowCount / summary.total) * 100) : 0}%</div><div class="stat-lbl">Low Rate</div></div>
+    </div>
+
+    <div class="glass-card quality-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Batches</h4>
+        <span class="badge badge-blue">Segregation Score</span>
+      </div>
+      <div class="quality-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="quality-item">
+            <div>
+              <div class="quality-title">${e.org} · ${e.kg} kg processed</div>
+              <div class="quality-sub">Score ${e.score} · Seg ${e.segScore}% · ${fmtDate(e.ts)}</div>
+            </div>
+            <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
+          </div>
+        `).join('') : '<div class="empty-state">No quality records yet.</div>'}
       </div>
     </div>
   `;
@@ -1671,6 +2185,9 @@ async function renderProvider(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
+      ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -1937,17 +2454,28 @@ async function renderProvider(mc, fullRender) {
   if (currentView === 'v-pv-hist-week' || currentView === 'v-pv-hist-month') {
     const isMonth = currentView === 'v-pv-hist-month';
     const limitDays = isMonth ? 30 : 7;
+
     const now = Date.now();
+    const completed = getAllOrders().filter(o => o.providerId === SESSION.id && o.status === 'completed');
     const filteredHistory = completed.filter(o => (now - o.ts) <= (limitDays * 24 * 60 * 60 * 1000));
     
     if(fullRender) mc.innerHTML = `
-      <div class="between" style="margin-bottom:24px;">
-         <h3 class="heading" style="margin-bottom:0;">${isMonth ? 'Monthly' : 'Weekly'} Records</h3>
-         ${filteredHistory.length ? `<button class="btn btn-outline-danger btn-sm" onclick="clearAllHistory('provider')">🗑 Clear All History</button>` : ''}
-      </div>
-      <div id="pv-hist-list"></div>
+      <section class="records-shell" aria-label="${isMonth ? 'Monthly' : 'Weekly'} records">
+        <div class="between records-header">
+           <h3 class="heading" style="margin-bottom:0;">${isMonth ? 'Monthly' : 'Weekly'} Records</h3>
+           ${filteredHistory.length ? `<div class="records-tools"><button class="btn btn-outline-danger btn-sm" onclick="clearAllHistory('provider')">🗑 Clear All History</button></div>` : ''}
+        </div>
+        <div id="pv-hist-list" class="record-stack"></div>
+      </section>
     `;
-    document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : `<div class="empty-state"><div class="empty-sub">No completed history in the last ${limitDays} days.</div></div>`;
+    document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : renderDashboardListState({
+      icon: '📦',
+      title: `No completed history in the last ${limitDays} days`,
+      description: 'No provider order history was recorded during this period.',
+      subtext: 'Completed dispatches will display here once available.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
   }
 }
 
@@ -2238,6 +2766,9 @@ async function renderRider(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
+      ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -2742,6 +3273,9 @@ async function renderPlant(mc, fullRender) {
       ${renderReconciliationWidget()}
       ${renderSlaWidget()}
       ${renderEnergyWidget()}
+      ${renderSensorWidget()}
+      ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -2952,6 +3486,7 @@ window.openPlantConfirm = function(id) {
 
 window.confirmPlantReceipt = function(id) {
   const o = getOrder(id); if(!o) return;
+  if (o.status === 'completed') return showToast('Order already processed.');
   const score = document.getElementById('p-score').value || 0;
   o.status = 'completed'; o.segScore = score;
   
@@ -2972,8 +3507,11 @@ window.confirmPlantReceipt = function(id) {
          document.getElementById('token-balance').textContent = SESSION.tokens;
      }
 
-     const expectedTokens = TrustProtocol.calculateReward(baseTokens, trustScore);
-     const deltaPct = expectedTokens ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
+      // Expected tokens represent the base (non-trust-multiplied) reward.
+      // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
+      // the trust bonus/penalty percentage (and enables mismatch flagging).
+      const expectedTokens = baseTokens;
+      const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
      addCreditEntry({
        id: 'credit-' + uid(),
        orderId: o.id,
@@ -3011,6 +3549,36 @@ window.confirmPlantReceipt = function(id) {
     toast: `Plant confirmed receipt for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Delivery complete'
   }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
+  const route = getOrderRouteEndpoints(o);
+  if (route.start && route.end) {
+    const distanceKm = parseFloat(distanceKm(route.start.lat, route.start.lng, route.end.lat, route.end.lng).toFixed(1));
+    const emissionKg = parseFloat((distanceKm * 0.21).toFixed(2));
+    const offsetKg = parseFloat((kgProcessed * 0.62).toFixed(2));
+    const score = Math.max(10, Math.min(100, Math.round((offsetKg / Math.max(emissionKg, 1)) * 100)));
+    addEmissionsEntry({
+      id: 'ems-' + uid(),
+      orderId: o.id,
+      org: o.providerOrg,
+      distanceKm,
+      emissionKg,
+      offsetKg,
+      score,
+      ts: ts()
+    });
+  }
+  if (kgProcessed > 0) {
+    const segScore = parseFloat(o.segScore || 0);
+    const qualityScore = Math.max(10, Math.min(100, Math.round(segScore || 70)));
+    addQualityEntry({
+      id: 'qlt-' + uid(),
+      orderId: o.id,
+      org: o.providerOrg,
+      kg: kgProcessed,
+      segScore: segScore || 0,
+      score: qualityScore,
+      ts: ts()
+    });
+  }
   closeModal();
   refreshCurrentView();
   showToast(`✓ Intake Confirmed. Minted ${earnedTokens} $RGX for provider!`);
@@ -3121,6 +3689,15 @@ function startIoTSim() {
     if (changed) {
       saveIoTBins(bins);
       syncIoTAlertBadge();
+      const summary = getSensorReliabilitySummary();
+      addSensorSnapshot({
+        id: 'sensor-' + uid(),
+        ts: ts(),
+        score: summary.score,
+        offlineCount: summary.offlineCount,
+        staleCount: summary.staleCount,
+        total: summary.total
+      });
       // If user is watching the IoT view, refresh the fill bars without full re-render
       if (currentView === 'v-iot-bins') iotLiveUpdate(bins);
     }
@@ -3260,13 +3837,14 @@ function renderIoT(mc, fullRender) {
 
     <!-- Bin Cards Grid -->
     <div class="iot-bins-grid" id="iot-bins-grid">
-      ${bins.length ? bins.map(buildBinCard).join('') : `
-        <div class="empty-state" style="grid-column:1/-1;">
-          <div class="empty-icon">🗑️</div>
-          <div class="empty-title">No bins connected</div>
-          <div class="empty-sub">Click <strong>+ Add Bin</strong> to register your first IoT sensory bin.</div>
-        </div>`}
-    </div>
+      ${bins.length ? bins.map(buildBinCard).join('') : renderDashboardListState({
+        icon: '🗑️',
+        title: 'No bins connected',
+        description: 'Register your first IoT bin to begin monitoring waste fill levels.',
+        actionHtml: '<button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')">Add Bin</button>',
+        statusLabel: 'Idle',
+        tone: 'inactive'
+      })}
 
     <!-- Network telemetry footer -->
     <div class="glass-card sensor-card" style="margin-top:28px; padding:20px;">
@@ -3387,3 +3965,63 @@ switchAuthTab('login');
 
 // ── Initialize Appwrite Cloud Sync Engine ──
 setTimeout(() => { ReGenXRealtime?.init(); ReGenXRealtime?.requestSnapshot?.(); }, 1000);
+setTimeout(() => { if (window.CloudSync) window.CloudSync.init(); }, 1000);
+
+// Expose module-scoped functions to global scope for inline HTML handlers
+window.doRegister = doRegister;
+window.doLogin = doLogin;
+window.switchAuthTab = switchAuthTab;
+window.selectRole = selectRole;
+window.detectGPS = detectGPS;
+window.searchLocation = searchLocation;
+window.resetAppData = resetAppData;
+window.doLogout = doLogout;
+window.toggleTheme = toggleTheme;
+window.toggleSidebar = toggleSidebar;
+window.saveOrder = saveOrder;
+window.refreshCurrentView = refreshCurrentView;
+
+/**
+ * Returns the currently active view ID.
+ * @returns {string} The active view ID.
+ */
+window.getCurrentView = () => currentView;
+
+/**
+ * Returns the active user session object.
+ * @returns {Object} The session object.
+ */
+window.getSESSION = () => SESSION;
+
+/**
+ * @function animateAuthEntry
+ * @description Triggers a GSAP entrance animation on the login box for desktop viewports.
+ * Enhances perceived performance and visual polish on non-touch devices.
+ */
+function animateAuthEntry() {
+  if (window.gsap && window.matchMedia('(min-width: 768px)').matches) {
+    gsap.from('.login-box', {
+      y: 40,
+      opacity: 0,
+      duration: 0.7,
+      ease: 'power3.out'
+    });
+  }
+}
+
+window.addEventListener('DOMContentLoaded', animateAuthEntry);
+
+/**
+ * @function detectDeviceClass
+ * @description Detects whether the user is on a touch (mobile) or pointer (desktop) device
+ * using the CSS media query API. Applies a data-device attribute to <body> so CSS can
+ * serve targeted layout rules without JS-in-CSS hacks.
+ * @returns {void}
+ */
+function detectDeviceClass() {
+  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  document.body.setAttribute('data-device', isTouch ? 'mobile' : 'desktop');
+}
+
+detectDeviceClass();
+window.detectDeviceClass = detectDeviceClass;

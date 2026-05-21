@@ -1,5 +1,11 @@
 <div align="center">
 
+### 👨‍🏫 Project Mentor
+**Satyam Pandey**
+
+- LinkedIn: https://www.linkedin.com/in/satyam-pandey-0b246432a/
+- Phone: 9820866720
+
 # 🌿 ReGenX
 
 ### *Smart Circular Bio-Waste Logistics Platform with AI scanning, real-time GPS tracking, and role-based dashboards for Providers, Riders & Processing Plants.*
