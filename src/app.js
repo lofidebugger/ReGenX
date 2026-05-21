@@ -1826,7 +1826,7 @@ async function refreshCurrentView(fullRender = false) {
            <div class="between" style="margin-bottom:16px;">
              <div>
                <h4 style="margin-bottom:4px; font-size:18px;">Carbon Credit Staking</h4>
-               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${(DB.get('global-fund') || 45200 / 10).toFixed(1)} tons</strong> of CO2.</p>
+               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${((DB.get('global-fund') || 45200) / 10).toFixed(1)} tons</strong> of CO2.</p>
              </div>
              <div style="text-align:right;">
                <div style="font-size:24px; font-weight:700; color:var(--blue);">12.5% <span style="font-size:14px">APY</span></div>
