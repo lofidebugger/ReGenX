@@ -3693,16 +3693,25 @@ window.confirmPlantReceipt = function(id) {
      });
   }
 
+  const confirmed = confirm(
+  "Are you sure you want to mark this dispatch as completed?"
+  );
+
+  if (!confirmed) return;
+
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
   recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   addEsgAlertsForOrder(o);
+
   const kgProcessed = parseFloat(o.actualKg || o.kg || 0);
+
   if (kgProcessed > 0) {
     const energyKwh = parseFloat((kgProcessed * 0.35).toFixed(2));
     const efficiencyPct = Math.min(100, Math.round((energyKwh / (kgProcessed * 0.5)) * 100));
     const score = Math.max(10, Math.round((efficiencyPct * 0.7) + (o.segScore ? (o.segScore * 0.3) : 0)));
+
     addEnergyEntry({
       id: 'eng-' + uid(),
       orderId: o.id,
@@ -3714,6 +3723,7 @@ window.confirmPlantReceipt = function(id) {
       ts: ts()
     });
   }
+  
   publishOperationalEvent('DELIVERY_COMPLETED', [], {
     toast: `Plant confirmed receipt for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Delivery complete'
