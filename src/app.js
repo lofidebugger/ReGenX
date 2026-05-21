@@ -29,7 +29,7 @@ if ('serviceWorker' in navigator) {
           window.showToast(event.data.message);
         }
         if (event.data?.type === 'NAVIGATE') {
-          window.showView && window.showView('v-r-dash');
+          window.showView && window.showView('v-rd-dash');
         }
       });
     })
@@ -2638,7 +2638,7 @@ async function renderRider(mc, fullRender) {
             </div>
           `;
         }
-        showToast(`🤖 TSP Order ready (${source}). Fetching road route…`);
+        showToast(`🤖 TSP Order ready (${result?.source || 'route'}). Fetching road route…`);
 
         // PHASE 2: Try OSRM for real road geometry (async enhancement)
         const route = await fetchOSRMRoute(waypoints);
@@ -2685,6 +2685,10 @@ async function renderRider(mc, fullRender) {
           if(!w || currentView !== 'v-rd-dash') return;
           const wt = document.getElementById('rt-weather');
           const ct = document.getElementById('rt-temp');
+          const trafficEl = document.getElementById('rt-traffic');
+          const aiAdjEl = document.getElementById('rt-ai-adj');
+          const battEl = document.getElementById('rt-batt');
+          const confEl = document.getElementById('rt-conf');
           if(wt) {
             let cond = "Clear";
             if(w.weathercode > 50) cond = "Raining";
@@ -2692,16 +2696,22 @@ async function renderRider(mc, fullRender) {
             wt.textContent = cond + ` (${Math.round(w.temperature)}°C)`;
             wt.style.color = w.weathercode > 50 ? "var(--amber)" : "var(--green)";
             if(w.weathercode > 50) { 
-               document.getElementById('rt-traffic').textContent = "Congested"; 
-               document.getElementById('rt-ai-adj').textContent = "+12 Mins"; 
-               document.getElementById('rt-ai-adj').style.color = "var(--amber)"; 
+               if (trafficEl) trafficEl.textContent = "Congested"; 
+               if (aiAdjEl) {
+                 aiAdjEl.textContent = "+12 Mins"; 
+                 aiAdjEl.style.color = "var(--amber)";
+               }
             }
           }
           if(ct) ct.textContent = Math.round(w.temperature - 2) + "°C";
-          document.getElementById('rt-batt').textContent = Math.floor(Math.random() * 30 + 60) + "%";
-          document.getElementById('rt-batt').style.color = "var(--green)";
-          document.getElementById('rt-conf').textContent = "98.2%";
-          document.getElementById('rt-conf').style.color = "var(--blue)";
+          if (battEl) {
+            battEl.textContent = Math.floor(Math.random() * 30 + 60) + "%";
+            battEl.style.color = "var(--green)";
+          }
+          if (confEl) {
+            confEl.textContent = "98.2%";
+            confEl.style.color = "var(--blue)";
+          }
        });
     }
   }
