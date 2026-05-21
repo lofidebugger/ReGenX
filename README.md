@@ -238,13 +238,10 @@ Deployment script automatically::
 
 
 <div align="center">
-
  
 ## 🔄 Pickup Workflow
 
-```
-Provider creates dispatch request
-        ↓
+<pre>        ↓
    (Optional) BioScan AI verifies waste quality
         ↓
    Request appears on Rider's job board
@@ -258,7 +255,7 @@ Provider creates dispatch request
    Plant confirms receipt → order COMPLETED
         ↓
    Provider earns $RGX tokens 🪙
-```
+</pre>
 
 </div>
 
