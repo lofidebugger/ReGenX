@@ -6,6 +6,7 @@ import { TrustProtocol } from './trust.js';
 import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
+import { CloudSync } from './cloud-sync.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
@@ -3885,6 +3886,20 @@ window.resetAppData = resetAppData;
 window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
+window.saveOrder = saveOrder;
+window.refreshCurrentView = refreshCurrentView;
+
+/**
+ * Returns the currently active view ID.
+ * @returns {string} The active view ID.
+ */
+window.getCurrentView = () => currentView;
+
+/**
+ * Returns the active user session object.
+ * @returns {Object} The session object.
+ */
+window.getSESSION = () => SESSION;
 
 /**
  * @function animateAuthEntry

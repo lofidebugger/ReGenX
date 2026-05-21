@@ -1445,3 +1445,77 @@ tr:hover td { background: var(--bg); }
 [data-theme="dark"] .nav-item.active {
   border-left-color: var(--green);
 }
+
+/* ════════ REALTIME SYNC BADGE & TOPBAR RESPONSIVENESS ════════ */
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+  height: 26px;
+  margin-right: 16px;
+}
+.sync-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sync-badge-text {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.topbar-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 32px;
+  width: 100%;
+  position: relative;
+}
+
+/* Responsive topbar styling */
+@media (max-width: 768px) {
+  .topbar {
+    padding-left: 0 !important; /* Prevents shifting ticker/main content bar */
+  }
+  .topbar-content {
+    padding-left: 64px !important; /* Space for absolute-positioned sidebar toggle hamburger */
+    padding-right: 16px !important;
+  }
+  .topbar-details {
+    display: none !important; /* Hide user name/role to conserve width */
+  }
+}
+
+@media (max-width: 600px) {
+  .sync-badge {
+    padding: 4px 6px;
+    margin-right: 8px;
+  }
+  .sync-badge-text {
+    display: none !important; /* Dynamic status badge text is hidden to keep it clean */
+  }
+  .token-balance {
+    padding: 4px 8px;
+    font-size: 14px;
+    gap: 4px;
+  }
+  .token-symbol {
+    display: none !important; /* Hide '$RGX' symbol */
+  }
+  .topbar-logout .logout-text {
+    display: none !important;
+  }
+  .topbar-logout .logout-icon {
+    display: inline-block !important;
+  }
+  .topbar-logout {
+    padding: 6px 10px !important;
+  }
+}
