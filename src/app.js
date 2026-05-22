@@ -51,6 +51,91 @@ window.requestPushPermission = async function() {
   }
 };
 
+/**
+ * @function getAlertPreference
+ * @description Reads the persisted smart alert preference for the current user.
+ * @returns {boolean} True if alerts are enabled.
+ */
+function getAlertPreference() {
+  try {
+    if (!SESSION || !SESSION.id) return false; // ← add this guard
+    return window.localStorage.getItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id
+    ) === 'true';
+  } catch { return false; }
+}
+
+/**
+ * @function setAlertPreference
+ * @description Persists the smart alert preference for the current user.
+ * @param {boolean} enabled - Whether alerts should be enabled.
+ * @returns {void}
+ */
+function setAlertPreference(enabled) {
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id,
+      String(enabled)
+    );
+  } catch { /* ignore */ }
+}
+
+/**
+ * @function toggleSmartAlerts
+ * @description Toggles Smart Dispatch Alerts on or off. Persists preference
+ * to localStorage, updates button UI with GSAP animation, and deregisters
+ * Background Sync when disabling.
+ * @returns {Promise<void>}
+ */
+window.toggleSmartAlerts = async function() {
+  const btn = document.getElementById('btn-smart-alerts');
+  const isEnabled = getAlertPreference();
+
+  if (isEnabled) {
+    // DISABLE PATH
+    setAlertPreference(false);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync-pause'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'transparent';
+      btn.style.border = '2px solid var(--red)';
+      btn.style.color = 'var(--red)';
+      btn.textContent = '🔔 Enable Smart Alerts'; // ← was wrong, now correct
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔕 Smart Alerts disabled.');
+    return;
+  }
+
+  // ENABLE PATH
+  if (!('Notification' in window)) {
+    window.showToast('⚠ Notifications not supported in this browser.');
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission === 'granted') {
+    setAlertPreference(true);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'linear-gradient(135deg, #F59E0B, #D97706)';
+      btn.style.border = 'none';
+      btn.style.color = '#fff';
+      btn.textContent = '🔕 Disable Smart Alerts'; // ← correct, after enabling show disable
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔔 Smart Alerts enabled!');
+  } else {
+    window.showToast('⚠ Notifications blocked. Enable in browser settings.');
+  }
+};
+
 // ── Trigger Background Sync when going offline ──
 window.addEventListener('offline', () => {
   window.showToast && window.showToast('📶 Offline mode — changes queued for sync.');
@@ -1264,12 +1349,15 @@ async function renderProvider(mc, fullRender) {
                 <div style="font-size:12px; color:var(--text-muted);">Get notified instantly when your dispatch is picked up</div>
               </div>
             </div>
-            <button class="btn btn-full" style="background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff; font-weight:700;" onclick="window.requestPushPermission()">
-              🔔 Enable Smart Alerts
+            <button class="btn btn-full" id="btn-smart-alerts"
+              style="${getAlertPreference()
+                ? 'background:transparent; border:2px solid var(--red); color:var(--red);'
+                : 'background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff;'} font-weight:700;"
+              onclick="toggleSmartAlerts()">
+              ${getAlertPreference() ? '🔕 Disable Smart Alerts' : '🔔 Enable Smart Alerts'}
             </button>
           </div>
         </div>
-
       </div>
     `;
     
@@ -2708,6 +2796,7 @@ window.resetAppData = resetAppData;
 window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
+window.toggleSmartAlerts = toggleSmartAlerts;
 
 /**
  * @function animateAuthEntry
