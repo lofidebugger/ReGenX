@@ -293,20 +293,20 @@ export const CloudSync = {
      * @param {Object} document - Data to sync.
      * @returns {Promise<void>}
      */
-    pushDocument: async (collection, document) => {
+    pushDocument: async (collection, payload) => {
         if (!CloudSync.isLive || !CloudSync.databases || !CloudSync.config) return;
         
         CloudSync.renderSyncBadge('syncing', 'Syncing...');
 
         try {
-            const sanitizedDoc = CloudSync.sanitizeDoc(document);
+            const sanitizedDoc = CloudSync.sanitizeDoc(payload);
             const { databaseId, ordersCollectionId } = CloudSync.config;
 
             try {
                 await CloudSync.databases.updateDocument(
                     databaseId,
                     ordersCollectionId,
-                    document.id,
+                    payload.id,
                     sanitizedDoc
                 );
                 console.log(`☁️ Synced to Appwrite (Updated) -> Collection [${ordersCollectionId}]`, sanitizedDoc);
@@ -315,7 +315,7 @@ export const CloudSync = {
                     await CloudSync.databases.createDocument(
                         databaseId,
                         ordersCollectionId,
-                        document.id,
+                        payload.id,
                         sanitizedDoc
                     );
                     console.log(`☁️ Synced to Appwrite (Created) -> Collection [${ordersCollectionId}]`, sanitizedDoc);

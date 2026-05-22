@@ -4,7 +4,7 @@
 // Supports: Offline fallback, Background Sync, Push Notifications
 // ══════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'regenx-v4';
+const CACHE_VERSION = 'regenx-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SYNC_TAG = 'regenx-order-sync';
@@ -29,6 +29,8 @@ const STATIC_ASSETS = [
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'
 ];
+
+const STATIC_ASSET_PATHS = new Set(STATIC_ASSETS.map((asset) => new URL(asset, self.location.origin).pathname));
 
 /**
  * Adds assets to cache one-by-one so a missing optional file does not break
@@ -81,6 +83,10 @@ async function getOfflineFallback() {
   return caches.match(OFFLINE_URL);
 }
 
+function shouldIgnoreSearch(request, url) {
+  return request.mode === 'navigate' || STATIC_ASSET_PATHS.has(url.pathname);
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
@@ -117,8 +123,10 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.origin === location.origin) {
+    const ignoreSearch = shouldIgnoreSearch(request, url);
+
     event.respondWith(
-      caches.match(request).then(async (cachedResponse) => {
+      caches.match(request, ignoreSearch ? { ignoreSearch: true } : undefined).then(async (cachedResponse) => {
         if (cachedResponse) return cachedResponse;
 
         try {
