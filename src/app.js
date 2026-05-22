@@ -1288,28 +1288,27 @@ function handleGoogleLogin(response) {
     authProvider: "google"
   };
 
-  // SAVE ACCOUNT
- const existing = DB
-  .list('acc:')
-  .map(k => DB.get(k))
-  .find(u => u.email === acc.email);
+  const existing = DB
+    .list('acc:')
+    .map(k => DB.get(k))
+    .find(u => u.email === acc.email);
 
-if(existing){
+  let loginAcc;
 
-  executeLogin(existing);
+  if (existing) {
+    existing.name = payload.name;
+    existing.avatar = payload.picture;
+    DB.set('acc:' + existing.id, existing);
+    loginAcc = existing;
+  } else {
+    DB.set('acc:' + acc.id, acc);
+    loginAcc = acc;
+  }
 
-}else{
-
-  DB.set('acc:' + acc.id, acc);
-
-  executeLogin(acc);
-}
-
-  // LOGIN DIRECTLY
-  executeLogin(acc);
+  executeLogin(loginAcc);
 
   showToast(
-    `✓ Welcome ${acc.name}`
+    `✓ Welcome ${loginAcc.name}`
   );
 }
 
