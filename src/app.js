@@ -59,6 +59,91 @@ window.requestPushPermission = async function() {
   }
 };
 
+/**
+ * @function getAlertPreference
+ * @description Reads the persisted smart alert preference for the current user.
+ * @returns {boolean} True if alerts are enabled.
+ */
+function getAlertPreference() {
+  try {
+    if (!SESSION || !SESSION.id) return false; // ← add this guard
+    return window.localStorage.getItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id
+    ) === 'true';
+  } catch { return false; }
+}
+
+/**
+ * @function setAlertPreference
+ * @description Persists the smart alert preference for the current user.
+ * @param {boolean} enabled - Whether alerts should be enabled.
+ * @returns {void}
+ */
+function setAlertPreference(enabled) {
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id,
+      String(enabled)
+    );
+  } catch { /* ignore */ }
+}
+
+/**
+ * @function toggleSmartAlerts
+ * @description Toggles Smart Dispatch Alerts on or off. Persists preference
+ * to localStorage, updates button UI with GSAP animation, and deregisters
+ * Background Sync when disabling.
+ * @returns {Promise<void>}
+ */
+window.toggleSmartAlerts = async function() {
+  const btn = document.getElementById('btn-smart-alerts');
+  const isEnabled = getAlertPreference();
+
+  if (isEnabled) {
+    // DISABLE PATH
+    setAlertPreference(false);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync-pause'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'transparent';
+      btn.style.border = '2px solid var(--red)';
+      btn.style.color = 'var(--red)';
+      btn.textContent = '🔔 Enable Smart Alerts'; // ← was wrong, now correct
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔕 Smart Alerts disabled.');
+    return;
+  }
+
+  // ENABLE PATH
+  if (!('Notification' in window)) {
+    window.showToast('⚠ Notifications not supported in this browser.');
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission === 'granted') {
+    setAlertPreference(true);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'linear-gradient(135deg, #F59E0B, #D97706)';
+      btn.style.border = 'none';
+      btn.style.color = '#fff';
+      btn.textContent = '🔕 Disable Smart Alerts'; // ← correct, after enabling show disable
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔔 Smart Alerts enabled!');
+  } else {
+    window.showToast('⚠ Notifications blocked. Enable in browser settings.');
+  }
+};
+
 // ── Trigger Background Sync when going offline ──
 window.addEventListener('offline', () => {
   window.showToast && window.showToast('📶 Offline mode — changes queued for sync.');
@@ -68,6 +153,9 @@ window.addEventListener('offline', () => {
 });
 window.addEventListener('online', () => {
   window.showToast && window.showToast('✅ Back online! Syncing queued data...');
+  if (window.CloudSync?.isLive) {
+    window.CloudSync.flushOfflineQueue();
+  }
 });
 
 
@@ -92,6 +180,24 @@ const DB = {
         eventType: options.eventType || 'KPI_UPDATED',
         meta: options.meta || {}
       });
+    }
+    // Write-through to Appwrite — fire-and-forget, falls back to offline queue
+    if (!options.silent && !options.localOnly && val?.id) {
+      if (key.startsWith('ord:') && window.CloudSync) {
+        if (navigator.onLine && window.CloudSync.isLive) {
+          window.CloudSync.pushDocument(window.CloudSync.config?.ordersCollectionId, val)
+            .catch(() => window.CloudSync.queueOfflineWrite(key, val));
+        } else {
+          window.CloudSync.queueOfflineWrite(key, val);
+        }
+      } else if (key.startsWith('acc:') && window.CloudSync) {
+        if (navigator.onLine && window.CloudSync.isLive) {
+          window.CloudSync.pushAccount(val)
+            .catch(() => window.CloudSync.queueOfflineWrite(key, val));
+        } else {
+          window.CloudSync.queueOfflineWrite(key, val);
+        }
+      }
     }
     return true;
   } catch { return false; } },
@@ -274,22 +380,22 @@ function renderTrustIndexCard() {
     });
   }
   const badgeClass = score >= 90 ? 'badge-green' : score >= 75 ? 'badge-blue' : score >= 60 ? 'badge-amber' : 'badge-red';
-  return `
-    <div class="glass-card trust-index-card" style="margin-bottom:24px;">
-      <div class="between" style="margin-bottom:12px;">
-        <div>
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Public Trust Index</div>
-          <div style="font-size:20px; font-weight:800; margin-top:4px;">${score}/100</div>
+      return `
+        <div class="glass-card trust-index-card" style="margin-bottom:24px;">
+          <div class="between" style="margin-bottom:12px;">
+            <div>
+              <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Public Trust Index</div>
+              <div style="font-size:20px; font-weight:800; margin-top:4px;">${score}/100</div>
+            </div>
+            <span class="badge ${badgeClass}">${label}</span>
+          </div>
+          <div class="trust-index-bar"><span style="width:${score}%;"></span></div>
+          <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+            <div>${orderCount} verified order${orderCount === 1 ? '' : 's'}</div>
+            <div>${anomalyRate}% anomaly rate</div>
+          </div>
         </div>
-        <span class="badge ${badgeClass}">${label}</span>
-      </div>
-      <div class="trust-index-bar"><span style="width:${score}%;"></span></div>
-      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
-        <div>${orderCount} verified order${orderCount === 1 ? '' : 's'}</div>
-        <div>${anomalyRate}% anomaly rate</div>
-      </div>
-    </div>
-  `;
+      `;
 }
 
 /**
@@ -405,15 +511,15 @@ function addEsgAlertsForOrder(order) {
  */
 function renderComplianceWidget() {
   const alerts = loadEsgAlerts().filter(a => !a.resolved).sort((a, b) => b.ts - a.ts);
-  const items = alerts.slice(0, 3).map(a => `
-    <div class="compliance-item">
-      <div>
-        <div class="compliance-title">${a.message}</div>
-        <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
-      </div>
-      <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
-    </div>
-  `).join('');
+      const items = alerts.slice(0, 3).map(a => `
+        <div class="compliance-item">
+          <div>
+            <div class="compliance-title">${a.message}</div>
+            <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
+          </div>
+          <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
+        </div>
+      `).join('');
 
   return `
     <div class="glass-card compliance-card" style="margin-bottom:24px;">
@@ -603,6 +709,16 @@ function getSlaSummary() {
  */
 function renderSlaWidget() {
   const summary = getSlaSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⏱️',
+      title: 'No dispatch SLA data',
+      description: 'Dispatch activity tracking will begin once orders are processed.',
+      subtext: 'SLA metrics and on-time performance will appear after your first completed dispatch.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sla-card" style="margin-bottom:24px;">
@@ -675,6 +791,16 @@ function getEnergySummary() {
  */
 function renderEnergyWidget() {
   const summary = getEnergySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⚡',
+      title: 'No energy analytics yet',
+      description: 'Energy yield scoring is available once plant processing data is recorded.',
+      subtext: 'Complete your first intake and log biogas output to see efficiency metrics.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card energy-card" style="margin-bottom:24px;">
@@ -746,6 +872,17 @@ function getSensorReliabilitySummary() {
  */
 function renderSensorWidget() {
   const summary = getSensorReliabilitySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '📡',
+      title: 'No IoT bins connected',
+      description: 'Sensor network monitoring requires registered IoT bins.',
+      subtext: 'Register your first waste bin to track fill levels and receive alerts.',
+      statusLabel: 'Idle',
+      tone: 'inactive',
+      actionHtml: SESSION.role === 'provider' ? '<button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')" style="margin-top:8px;">Connect Bins →</button>' : ''
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sensor-reliability-card" style="margin-bottom:24px;">
@@ -816,6 +953,16 @@ function getEmissionsSummary() {
  */
 function renderEmissionsWidget() {
   const summary = getEmissionsSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '🌍',
+      title: 'No emissions data recorded',
+      description: 'Route emissions tracking requires completed deliveries.',
+      subtext: 'Finish your first delivery to calculate carbon offset and emissions impact.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card emissions-card" style="margin-bottom:24px;">
@@ -1415,6 +1562,14 @@ function executeLogin(acc) {
   window.SESSION = SESSION;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').classList.add('active');
+
+  // Hydrate localStorage from Appwrite cloud on every login.
+  // This ensures data persists across device changes and browser wipes.
+  if (window.CloudSync?.isLive) {
+    window.CloudSync.hydrateFromCloud(acc.id).catch(err =>
+      console.warn('[Login] Cloud hydration failed, running on local data.', err)
+    );
+  }
   
   document.getElementById('tb-name').textContent = acc.name;
   document.getElementById('tb-role').textContent = `${acc.role.toUpperCase()} · ${acc.org}`;
@@ -1826,7 +1981,7 @@ async function refreshCurrentView(fullRender = false) {
            <div class="between" style="margin-bottom:16px;">
              <div>
                <h4 style="margin-bottom:4px; font-size:18px;">Carbon Credit Staking</h4>
-               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${(DB.get('global-fund') || 45200 / 10).toFixed(1)} tons</strong> of CO2.</p>
+               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${((DB.get('global-fund') || 45200) / 10).toFixed(1)} tons</strong> of CO2.</p>
              </div>
              <div style="text-align:right;">
                <div style="font-size:24px; font-weight:700; color:var(--blue);">12.5% <span style="font-size:14px">APY</span></div>
@@ -2433,12 +2588,15 @@ async function renderProvider(mc, fullRender) {
                 <div style="font-size:12px; color:var(--text-muted);">Get notified instantly when your dispatch is picked up</div>
               </div>
             </div>
-            <button class="btn btn-full" style="background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff; font-weight:700;" onclick="window.requestPushPermission()">
-              🔔 Enable Smart Alerts
+            <button class="btn btn-full" id="btn-smart-alerts"
+              style="${getAlertPreference()
+                ? 'background:transparent; border:2px solid var(--red); color:var(--red);'
+                : 'background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff;'} font-weight:700;"
+              onclick="toggleSmartAlerts()">
+              ${getAlertPreference() ? '🔕 Disable Smart Alerts' : '🔔 Enable Smart Alerts'}
             </button>
           </div>
         </div>
-
       </div>
     `;
     
@@ -2455,15 +2613,27 @@ async function renderProvider(mc, fullRender) {
        id, org: (DB.get('acc:'+id)||{org:'Unknown'}).org, kg: lbMap[id]
     })).sort((a,b)=>b.kg - a.kg).slice(0,3);
     
-    const lbHTML = lbSorted.map((item, i) => `
-      <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
-         <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
-         <div class="badge badge-green">${item.kg} kg</div>
-      </div>
-    `).join('');
-    
     const lbDiv = document.getElementById('pv-leaderboard');
-    if(lbDiv) lbDiv.innerHTML = lbHTML;
+    if(lbDiv) {
+      if (!allCompleted.length) {
+        lbDiv.innerHTML = renderDashboardListState({
+          icon: '🏆',
+          title: 'Leaderboard coming soon',
+          description: 'Regional rankings update as you complete dispatches.',
+          subtext: 'Top contributors by material recovered will appear here.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        });
+      } else {
+        const lbHTML = lbSorted.map((item, i) => `
+          <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
+             <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
+             <div class="badge badge-green">${item.kg} kg</div>
+          </div>
+        `).join('');
+        lbDiv.innerHTML = lbHTML;
+      }
+    }
 
     // Trust Protocol Integration
     const trustScore = TrustProtocol.calculateScore(SESSION, orders);
@@ -3292,6 +3462,8 @@ window.openIntegrityScan = function(orderId) {
     </div>
   `;
   modal.classList.add('open');
+  box.classList.add('integrity-modal');
+  box.classList.add('glass-card');
 
   setTimeout(() => {
     const events = getOrderLedgerEvents(orderId);
@@ -3299,26 +3471,36 @@ window.openIntegrityScan = function(orderId) {
     const statusClass = integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red';
     const statusLabel = integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk';
 
-    const timeline = events.length ? events.map((e, idx) => {
-      const meta = getIntegrityEventMeta(e.event);
-      return `
-        <div class="trust-tl-item">
-          <div class="trust-tl-icon">${meta.icon}</div>
-          <div>
-            <div class="trust-tl-title">${meta.label}</div>
-            <div class="trust-tl-sub">${fmtDate(e.ts)} · ${e.actorRole.toUpperCase()}</div>
+    let timeline = '';
+    if (events.length) {
+      timeline = events.map((e, idx) => {
+        const meta = getIntegrityEventMeta(e.event);
+        return `
+          <div class="trust-tl-item">
+            <div class="trust-tl-icon">${meta.icon}</div>
+            <div>
+              <div class="trust-tl-title">${meta.label}</div>
+              <div class="trust-tl-sub">${fmtDate(e.ts)} · ${e.actorRole.toUpperCase()}</div>
+            </div>
+            ${idx < events.length - 1 ? '<div class="trust-tl-line"></div>' : ''}
           </div>
-          ${idx < events.length - 1 ? '<div class="trust-tl-line"></div>' : ''}
+        `;
+      }).join('');
+    } else {
+      timeline = `
+        <div class="dashboard-state dashboard-state-empty">
+          <div class="dashboard-state-head">
+            <div class="dashboard-state-icon">🧾</div>
+            <span class="status-badge status-badge-inactive">IDLE</span>
+          </div>
+          <div style="flex:1;">
+            <div class="dashboard-state-title">No ledger events yet</div>
+            <div class="dashboard-state-desc">This dispatch has no recorded custody events.</div>
+            <div class="dashboard-state-sub">Once the order is scanned, the timeline will populate here.</div>
+          </div>
         </div>
       `;
-    }).join('') : renderDashboardListState({
-      icon: '🧾',
-      title: 'No ledger events yet',
-      description: 'This dispatch has no recorded custody events.',
-      subtext: 'Once the order is scanned, the timeline will populate here.',
-      statusLabel: 'Idle',
-      tone: 'inactive'
-    });
+    }
 
     box.innerHTML = `
       <h3 class="modal-title">Integrity Scan</h3>
@@ -3326,7 +3508,7 @@ window.openIntegrityScan = function(orderId) {
       <div class="integrity-summary">
         <div>
           <div style="font-size:12px; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Trust Score</div>
-          <div style="font-size:24px; font-weight:800;">${integrity.score}/100</div>
+          <div class="trust-score-large">${integrity.score}/100</div>
         </div>
         <div style="text-align:right;">
           <div class="badge ${statusClass}">${statusLabel}</div>
@@ -3340,7 +3522,12 @@ window.openIntegrityScan = function(orderId) {
     `;
   }, 900);
 }
-window.closeModal = function() { document.getElementById('modal').classList.remove('open'); }
+window.closeModal = function() {
+  const modal = document.getElementById('modal');
+  const box = document.getElementById('modal-box');
+  if (modal) modal.classList.remove('open');
+  if (box) box.classList.remove('integrity-modal');
+}
 
 window.openSettings = function() {
   const html = `
@@ -3603,7 +3790,7 @@ async function renderPlant(mc, fullRender) {
   }
 
   if (currentView === 'v-pl-in') {
-    if(fullRender) mc.innerHTML = `<h3 class="heading" style="margin-bottom:24px;">Incoming Flow</h3><div id="pl-in-list"></div>`;
+    if(fullRender) mc.innerHTML = `<div class="incoming-shell"><h3 class="heading">Incoming Flow</h3><div id="pl-in-list"></div></div>`;
     document.getElementById('pl-in-list').innerHTML = incoming.length ? incoming.map(o=>buildOrderCard(o,'plant')).join('') : renderDashboardListState({
       icon: '🚛',
       title: 'No incoming flow',
@@ -3693,16 +3880,25 @@ window.confirmPlantReceipt = function(id) {
      });
   }
 
+  const confirmed = confirm(
+  "Are you sure you want to mark this dispatch as completed?"
+  );
+
+  if (!confirmed) return;
+
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
   recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   addEsgAlertsForOrder(o);
+
   const kgProcessed = parseFloat(o.actualKg || o.kg || 0);
+
   if (kgProcessed > 0) {
     const energyKwh = parseFloat((kgProcessed * 0.35).toFixed(2));
     const efficiencyPct = Math.min(100, Math.round((energyKwh / (kgProcessed * 0.5)) * 100));
     const score = Math.max(10, Math.round((efficiencyPct * 0.7) + (o.segScore ? (o.segScore * 0.3) : 0)));
+
     addEnergyEntry({
       id: 'eng-' + uid(),
       orderId: o.id,
@@ -3714,6 +3910,7 @@ window.confirmPlantReceipt = function(id) {
       ts: ts()
     });
   }
+  
   publishOperationalEvent('DELIVERY_COMPLETED', [], {
     toast: `Plant confirmed receipt for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Delivery complete'
@@ -4147,6 +4344,7 @@ window.resetAppData = resetAppData;
 window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
+window.toggleSmartAlerts = toggleSmartAlerts;
 window.saveOrder = saveOrder;
 window.refreshCurrentView = refreshCurrentView;
 
@@ -4161,6 +4359,7 @@ window.getCurrentView = () => currentView;
  * @returns {Object} The session object.
  */
 window.getSESSION = () => SESSION;
+
 
 /**
  * @function animateAuthEntry
@@ -4227,3 +4426,36 @@ function showToast(message) {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 2500);
 }
+
+// ==========================================
+// DARK MODE TOGGLE LOGIC (ISSUE #79)
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const navToggleBtn = document.getElementById('navbar-theme-toggle');
+    const rootHtml = document.documentElement;
+
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        rootHtml.classList.add('dark');
+        if (navToggleBtn) navToggleBtn.innerText = '☀️';
+    } else {
+        rootHtml.classList.remove('dark');
+        if (navToggleBtn) navToggleBtn.innerText = '🌙';
+    }
+
+    if (navToggleBtn) {
+        navToggleBtn.addEventListener('click', () => {
+            if (rootHtml.classList.contains('dark')) {
+                rootHtml.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                navToggleBtn.innerText = '🌙';
+            } else {
+                rootHtml.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                navToggleBtn.innerText = '☀️';
+            }
+        });
+    }
+});
