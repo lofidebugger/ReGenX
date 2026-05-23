@@ -8,6 +8,8 @@ import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
 import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
+import { ESGReporter } from './esg-reporter.js';
+import { AccessibilityManager } from './accessibility.js';
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
 const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
@@ -39,7 +41,7 @@ if ('serviceWorker' in navigator) {
         }
       });
     })
-    .catch(err => console.log('SW Registration Failed', err));
+    .catch(err => console.error('SW Registration Failed', err));
 }
 
 // ── Push Notification Permission UI ──
@@ -82,6 +84,8 @@ function getAlertPreference() {
  * @returns {void}
  */
 function setAlertPreference(enabled) {
+  if (!SESSION || !SESSION.id) return;
+
   try {
     window.localStorage.setItem(
       STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id,
@@ -617,16 +621,32 @@ function saveTrustLedger(events) {
 }
 
 /**
- * Generate a ledger hash (SHA-256 length) for integrity records.
- * @returns {string} Hex hash with 0x prefix.
+ * Canonicalize a value for hashing so object key order cannot affect the digest.
+ * @param {*} value - Value to serialize.
+ * @returns {string} Stable string representation.
  */
-function generateLedgerHash() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const bytes = new Uint8Array(32);
-    window.crypto.getRandomValues(bytes);
-    return '0x' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+function canonicalizeHashPayload(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return `[${value.map(canonicalizeHashPayload).join(',')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalizeHashPayload(value[key])}`).join(',')}}`;
   }
-  return '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  return JSON.stringify(value);
+}
+
+/**
+ * Generate a SHA-256 ledger hash for integrity records.
+ * @param {Object} payload - Ledger payload to hash.
+ * @returns {Promise<string>} Hex hash with 0x prefix.
+ */
+async function generateLedgerHash(payload) {
+  if (!window.crypto?.subtle) {
+    throw new Error('Web Crypto API is unavailable in this browser context.');
+  }
+  const encoded = new TextEncoder().encode(canonicalizeHashPayload(payload));
+  const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+  return '0x' + Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -673,7 +693,7 @@ function getOrderIntegrity(order) {
  * @param {string} actorRole - Actor role.
  * @param {{lat?:number,lng?:number}} coords - Event coordinates.
  */
-function recordTrustEvent(order, event, actorRole, coords = {}) {
+async function recordTrustEvent(order, event, actorRole, coords = {}) {
   if (!order) return;
   const ledger = loadTrustLedger();
   const entry = {
@@ -686,14 +706,29 @@ function recordTrustEvent(order, event, actorRole, coords = {}) {
     lng: typeof coords.lng === 'number' ? coords.lng : null,
     actorRole,
     actorId: SESSION.id,
-    trustScore: 0,
-    hash: generateLedgerHash()
+    trustScore: 0
   };
   const nextLedger = [...ledger, entry];
   const route = getOrderRouteEndpoints(order);
   const orderEvents = nextLedger.filter(e => e.orderId === order.id);
   const integrity = TrustProtocol.calculateIntegrityScore(orderEvents, route, distanceKm);
   entry.trustScore = integrity.score;
+  try {
+    entry.hash = await generateLedgerHash({
+      id: entry.id,
+      orderId: entry.orderId,
+      event: entry.event,
+      ts: entry.ts,
+      lat: entry.lat,
+      lng: entry.lng,
+      actorRole: entry.actorRole,
+      actorId: entry.actorId,
+      trustScore: entry.trustScore
+    });
+  } catch (error) {
+    console.error('Failed to generate trust ledger hash:', error);
+    return;
+  }
   saveTrustLedger(nextLedger);
 }
 
@@ -1590,7 +1625,7 @@ window.fetchWeather = async function(lat, lng) {
 }
 
 // ── STATE ──
-let SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+let SESSION = { role: null, name: '', org: '', id: '', lat: null, lng: null };
 window.SESSION = SESSION;
 let selectedRole = 'provider';
 let currentView = '';
@@ -2023,7 +2058,7 @@ window.doLogout = function() {
   if (pvChartInstance) { pvChartInstance.destroy(); pvChartInstance = null; }
   if (plChartInstance) { plChartInstance.destroy(); plChartInstance = null; }
   if (rMap) { rMap.remove(); rMap = null; }
-  SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+  SESSION = { role: null, name: '', org: '', id: '', lat: null, lng: null };
   window.SESSION = SESSION;
   window.currentView = '';
   ReGenXRealtime?.setSession(null);
@@ -2050,6 +2085,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -2068,6 +2104,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -2085,6 +2122,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -2099,7 +2137,18 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker', 'v-quality': 'Quality Index', 'v-automation': 'Automation Pipeline' };
+  const titleMap = { 
+    'v-iot-bins': 'IoT Sensory Bins', 
+    'v-compliance': 'Compliance Center', 
+    'v-reconciliation': 'Reconciliation', 
+    'v-sla': 'SLA Monitor', 
+    'v-energy': 'Energy Scorecard', 
+    'v-sensor': 'Sensor Reliability', 
+    'v-emissions': 'Emissions Tracker', 
+    'v-quality': 'Quality Index',
+    'v-esg-hub': 'Sustainability Report Hub',
+    'v-automation': 'Automation Pipeline'
+  };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -2337,6 +2386,16 @@ function buildOrderCard(o, role) {
 // ── REFRESH CONTROLLER ──
 async function refreshCurrentView(fullRender = false) {
   const mc = document.getElementById('main-content');
+  if (currentView === 'v-esg-hub') {
+    const history = getAllOrders().filter(o => {
+      if (SESSION.role === 'provider') return o.providerId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'plant') return o.plantId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
+      return false;
+    });
+    ESGReporter.renderHub(mc, fullRender, SESSION, history);
+    return;
+  }
   if (currentView === 'v-audit-portal') {
     AuditPortal.renderPortal(mc, fullRender);
     return;
@@ -3348,7 +3407,7 @@ window.clearAllHistory = function(role) {
   refreshCurrentView(true);
 }
 
-window.submitPvRequest = function() {
+window.submitPvRequest = async function() {
   const type = document.getElementById('req-type').value;
   const kg = parseInt(document.getElementById('req-kg').value);
   const shift = document.getElementById('req-shift').value;
@@ -3371,7 +3430,9 @@ window.submitPvRequest = function() {
   };
   saveOrder(o);
   addSlaEntry(o);
-  recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+ // INSIDE submitPvRequest
+  await recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+  
   // Notify local roles and publish an operational realtime event
   addWorkflowNotification({
     title: 'Dispatch Created',
@@ -3400,7 +3461,6 @@ window.submitPvRequest = function() {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('DISPATCH_CREATED', [], {
     toast: `New dispatch created for ${nearest.org}.`,
     statusLabel: 'Dispatch live'
@@ -3819,12 +3879,14 @@ async function renderRider(mc, fullRender) {
 
 window.switchRdTab = function(t) { window._rdTab = t; refreshCurrentView(true); }
 
-window.riderAccept = function(id) {
+window.riderAccept = async function(id) {
   const o = getOrder(id); if(!o) return;
   o.status = 'assigned'; o.riderId = SESSION.id; o.riderName = SESSION.name;
   saveOrder(o);
   updateSlaEntry(o.id, { status: 'assigned' });
-  recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+// INSIDE riderAccept
+  await recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  
   addWorkflowNotification({
     title: 'Pickup Accepted',
     body: `${SESSION.name} accepted the pickup for ${o.providerOrg}.`,
@@ -3852,7 +3914,6 @@ window.riderAccept = function(id) {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Rider ${SESSION.name} accepted dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Route assigned'
@@ -3860,11 +3921,11 @@ window.riderAccept = function(id) {
   showToast("✓ Route Added to Batch!");
   showView('v-rd-dash');
 }
-window.riderUpdate = function(id, st) {
+window.riderUpdate = async function(id, st) {
   const o = getOrder(id); if(!o) return;
   o.status = st; saveOrder(o);
   updateSlaEntry(o.id, { status: st });
-  recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
   if (st === 'en_route') {
     addWorkflowNotification({
       title: 'Rider En Route',
@@ -3887,7 +3948,6 @@ window.riderUpdate = function(id, st) {
       url: '/'
     });
   }
-
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Dispatch #${o.id.slice(-6).toUpperCase()} moved to ${st.replace('_', ' ')}.`,
     statusLabel: 'Route moving'
@@ -3905,13 +3965,13 @@ window.openPickupConfirm = function(id) {
   document.getElementById('modal-box').innerHTML = html;
   document.getElementById('modal').classList.add('open');
 }
-window.confirmPickup = function(id) {
+window.confirmPickup = async function(id) {
   const kg = document.getElementById('m-kg').value;
   if(!kg) return showToast("⚠ Enter weight.");
   const o = getOrder(id); o.status = 'picked_up'; o.actualKg = kg; o.quality = document.getElementById('m-qual').value;
   saveOrder(o);
   updateSlaEntry(o.id, { pickupTs: ts(), status: 'picked_up' });
-  recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
   addWorkflowNotification({
     title: 'Pickup Confirmed',
     body: `${SESSION.name} collected ${kg}kg from ${o.providerOrg}.`,
@@ -3930,7 +3990,6 @@ window.confirmPickup = function(id) {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('PICKUP_CONFIRMED', [], {
     toast: `Pickup confirmed for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Pickup live'
@@ -3981,11 +4040,33 @@ window.openIntegrityScan = function(orderId) {
   box.classList.add('integrity-modal');
   box.classList.add('glass-card');
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const events = getOrderLedgerEvents(orderId);
+    let isTampered = false;
+
+    for (const e of events) {
+      if (!e.hash) {
+        isTampered = true;
+        break;
+      }
+
+      const { hash: storedHash, ...payload } = e;
+      try {
+        const expectedHash = await generateLedgerHash(payload);
+        if (normalizeHash(storedHash) !== normalizeHash(expectedHash)) {
+          isTampered = true;
+          break;
+        }
+      } catch (error) {
+        console.error('Failed to verify ledger hash:', error);
+        isTampered = true;
+        break;
+      }
+    }
+
     const integrity = getOrderIntegrity(order);
-    const statusClass = integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red';
-    const statusLabel = integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk';
+    const statusClass = isTampered ? 'badge-red' : (integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red');
+    const statusLabel = isTampered ? 'Cryptographic Tampering Detected' : (integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk');
 
     let timeline = '';
     if (events.length) {
@@ -4020,7 +4101,7 @@ window.openIntegrityScan = function(orderId) {
 
     box.innerHTML = `
       <h3 class="modal-title">Integrity Scan</h3>
-      <p class="modal-sub">Ledger hash and custody chain validated.</p>
+      <p class="modal-sub">${isTampered ? 'One or more ledger hashes failed cryptographic verification.' : 'Ledger hash and custody chain validated.'}</p>
       <div class="integrity-summary">
         <div>
           <div style="font-size:12px; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Trust Score</div>
@@ -4363,7 +4444,7 @@ window.openPlantConfirm = function(id) {
   document.getElementById('modal').classList.add('open');
 }
 
-window.confirmPlantReceipt = function(id) {
+window.confirmPlantReceipt = async function(id) {
   const o = getOrder(id); if(!o) return;
   if (o.status === 'completed') return showToast('Order already processed.');
   const score = document.getElementById('p-score').value || 0;
@@ -4411,8 +4492,8 @@ window.confirmPlantReceipt = function(id) {
 
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
-  recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
-  recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+  await recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   addWorkflowNotification({
     title: 'Plant Confirmation Received',
     body: `${o.plantName} confirmed the delivery for ${o.providerOrg}.`,
@@ -5026,5 +5107,10 @@ document.addEventListener('DOMContentLoaded', () => {
         navToggleBtn.addEventListener('click', () => {
             window.toggleTheme();
         });
+    }
+
+    // Initialize Accessibility Manager (Floating panel & options)
+    if (window.AccessibilityManager) {
+        window.AccessibilityManager.init();
     }
 });
