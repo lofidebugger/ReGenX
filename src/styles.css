@@ -210,7 +210,12 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
 .sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 50; height: 100vh; overflow: hidden; }
 .sidebar-header { height: 72px; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--border); gap: 12px; }
 .topbar-brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
-.sidebar-nav { padding: 24px 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.sidebar-nav { padding: 24px 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.sidebar-nav::-webkit-scrollbar { width: 5px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.05); border-radius: 10px; }
+[data-theme="dark"] .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); }
+.sidebar-nav:hover::-webkit-scrollbar-thumb { background: var(--border-focus); opacity: 0.5; }
 .sidebar-footer { padding: 16px; border-top: 1px solid var(--border); }
 
 .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; color: var(--text-muted); font-weight: 500; text-decoration: none; transition: 0.2s; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-size: 15px; }
