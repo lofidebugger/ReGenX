@@ -9,6 +9,7 @@ import { AuditPortal } from './audit-portal.js';
 import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
 import { ESGReporter } from './esg-reporter.js';
+import { AccessibilityManager } from './accessibility.js';
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
 const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
@@ -4976,5 +4977,10 @@ document.addEventListener('DOMContentLoaded', () => {
         navToggleBtn.addEventListener('click', () => {
             window.toggleTheme();
         });
+    }
+
+    // Initialize Accessibility Manager (Floating panel & options)
+    if (window.AccessibilityManager) {
+        window.AccessibilityManager.init();
     }
 });
