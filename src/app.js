@@ -8,6 +8,8 @@ import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
 import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
+import { ESGReporter } from './esg-reporter.js';
+import { AccessibilityManager } from './accessibility.js';
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
 const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
@@ -39,7 +41,7 @@ if ('serviceWorker' in navigator) {
         }
       });
     })
-    .catch(err => console.log('SW Registration Failed', err));
+    .catch(err => console.error('SW Registration Failed', err));
 }
 
 // ── Push Notification Permission UI ──
@@ -82,6 +84,8 @@ function getAlertPreference() {
  * @returns {void}
  */
 function setAlertPreference(enabled) {
+  if (!SESSION || !SESSION.id) return;
+
   try {
     window.localStorage.setItem(
       STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id,
@@ -167,6 +171,38 @@ const DEFAULT_LOCALITIES = [
 
 const WASTE_TYPES = ['Food waste (wet)', 'Vegetable scraps', 'Mixed kitchen waste', 'Biodegradable packaging'];
 const SHIFTS = ['Morning Shift (08:00 - 12:00)', 'Evening Shift (16:00 - 20:00)'];
+
+/**
+ * CO₂ offset emission factors (kg CO₂eq per kg bio-waste) keyed by waste type and processing method.
+ * Source: IPCC 2006 Guidelines for National Greenhouse Gas Inventories, Volume 5 (Waste);
+ * GHG Protocol Scope 3 Technical Guidance.
+ */
+const CO2_FACTORS = {
+  'Food waste (wet)':        { anaerobic_digestion: 0.67, composting: 0.20, biogas: 0.58, default: 0.67 },
+  'Vegetable scraps':        { anaerobic_digestion: 0.54, composting: 0.18, biogas: 0.45, default: 0.54 },
+  'Mixed kitchen waste':     { anaerobic_digestion: 0.60, composting: 0.22, biogas: 0.52, default: 0.60 },
+  'Biodegradable packaging': { anaerobic_digestion: 0.35, composting: 0.12, biogas: 0.28, default: 0.35 }
+};
+
+const PROCESSING_METHODS = {
+  anaerobic_digestion: 'Anaerobic Digestion',
+  composting:          'Composting',
+  biogas:              'Biogas Recovery'
+};
+
+/**
+ * Resolves the correct CO₂ offset factor for a given waste type and processing method.
+ * Falls back to a conservative estimate if the combination is not found.
+ * @param {string} wasteType - The waste category (must match a key in CO2_FACTORS).
+ * @param {string} [processingMethod] - The plant's processing method key.
+ * @returns {number} CO₂ offset factor in kg CO₂eq per kg waste.
+ */
+function getCO2Factor(wasteType, processingMethod) {
+  const typeFactors = CO2_FACTORS[wasteType];
+  if (!typeFactors) return 0.55; // Conservative fallback for unrecognised waste types
+  return typeFactors[processingMethod] || typeFactors['default'] || 0.55;
+}
+window.getCO2Factor = getCO2Factor;
 const NOTIF_STORE_KEY = 'notifications';
 const OFFLINE_QUEUE_KEY = 'offline-sync-queue';
 const MAX_NOTIF_HISTORY = 60;
@@ -585,16 +621,32 @@ function saveTrustLedger(events) {
 }
 
 /**
- * Generate a ledger hash (SHA-256 length) for integrity records.
- * @returns {string} Hex hash with 0x prefix.
+ * Canonicalize a value for hashing so object key order cannot affect the digest.
+ * @param {*} value - Value to serialize.
+ * @returns {string} Stable string representation.
  */
-function generateLedgerHash() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const bytes = new Uint8Array(32);
-    window.crypto.getRandomValues(bytes);
-    return '0x' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+function canonicalizeHashPayload(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return `[${value.map(canonicalizeHashPayload).join(',')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalizeHashPayload(value[key])}`).join(',')}}`;
   }
-  return '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  return JSON.stringify(value);
+}
+
+/**
+ * Generate a SHA-256 ledger hash for integrity records.
+ * @param {Object} payload - Ledger payload to hash.
+ * @returns {Promise<string>} Hex hash with 0x prefix.
+ */
+async function generateLedgerHash(payload) {
+  if (!window.crypto?.subtle) {
+    throw new Error('Web Crypto API is unavailable in this browser context.');
+  }
+  const encoded = new TextEncoder().encode(canonicalizeHashPayload(payload));
+  const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+  return '0x' + Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -641,7 +693,7 @@ function getOrderIntegrity(order) {
  * @param {string} actorRole - Actor role.
  * @param {{lat?:number,lng?:number}} coords - Event coordinates.
  */
-function recordTrustEvent(order, event, actorRole, coords = {}) {
+async function recordTrustEvent(order, event, actorRole, coords = {}) {
   if (!order) return;
   const ledger = loadTrustLedger();
   const entry = {
@@ -654,14 +706,29 @@ function recordTrustEvent(order, event, actorRole, coords = {}) {
     lng: typeof coords.lng === 'number' ? coords.lng : null,
     actorRole,
     actorId: SESSION.id,
-    trustScore: 0,
-    hash: generateLedgerHash()
+    trustScore: 0
   };
   const nextLedger = [...ledger, entry];
   const route = getOrderRouteEndpoints(order);
   const orderEvents = nextLedger.filter(e => e.orderId === order.id);
   const integrity = TrustProtocol.calculateIntegrityScore(orderEvents, route, distanceKm);
   entry.trustScore = integrity.score;
+  try {
+    entry.hash = await generateLedgerHash({
+      id: entry.id,
+      orderId: entry.orderId,
+      event: entry.event,
+      ts: entry.ts,
+      lat: entry.lat,
+      lng: entry.lng,
+      actorRole: entry.actorRole,
+      actorId: entry.actorId,
+      trustScore: entry.trustScore
+    });
+  } catch (error) {
+    console.error('Failed to generate trust ledger hash:', error);
+    return;
+  }
   saveTrustLedger(nextLedger);
 }
 
@@ -1558,7 +1625,7 @@ window.fetchWeather = async function(lat, lng) {
 }
 
 // ── STATE ──
-let SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+let SESSION = { role: null, name: '', org: '', id: '', lat: null, lng: null };
 window.SESSION = SESSION;
 let selectedRole = 'provider';
 let currentView = '';
@@ -1991,7 +2058,7 @@ window.doLogout = function() {
   if (pvChartInstance) { pvChartInstance.destroy(); pvChartInstance = null; }
   if (plChartInstance) { plChartInstance.destroy(); plChartInstance = null; }
   if (rMap) { rMap.remove(); rMap = null; }
-  SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+  SESSION = { role: null, name: '', org: '', id: '', lat: null, lng: null };
   window.SESSION = SESSION;
   window.currentView = '';
   ReGenXRealtime?.setSession(null);
@@ -2018,6 +2085,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -2036,6 +2104,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -2053,6 +2122,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
       <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -2067,7 +2137,18 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker', 'v-quality': 'Quality Index', 'v-automation': 'Automation Pipeline' };
+  const titleMap = { 
+    'v-iot-bins': 'IoT Sensory Bins', 
+    'v-compliance': 'Compliance Center', 
+    'v-reconciliation': 'Reconciliation', 
+    'v-sla': 'SLA Monitor', 
+    'v-energy': 'Energy Scorecard', 
+    'v-sensor': 'Sensor Reliability', 
+    'v-emissions': 'Emissions Tracker', 
+    'v-quality': 'Quality Index',
+    'v-esg-hub': 'Sustainability Report Hub',
+    'v-automation': 'Automation Pipeline'
+  };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -2305,6 +2386,16 @@ function buildOrderCard(o, role) {
 // ── REFRESH CONTROLLER ──
 async function refreshCurrentView(fullRender = false) {
   const mc = document.getElementById('main-content');
+  if (currentView === 'v-esg-hub') {
+    const history = getAllOrders().filter(o => {
+      if (SESSION.role === 'provider') return o.providerId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'plant') return o.plantId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
+      return false;
+    });
+    ESGReporter.renderHub(mc, fullRender, SESSION, history);
+    return;
+  }
   if (currentView === 'v-audit-portal') {
     AuditPortal.renderPortal(mc, fullRender);
     return;
@@ -3064,8 +3155,12 @@ async function renderProvider(mc, fullRender) {
         }),
         renderMetricCard({
           title: 'CO₂ Offset (kg)',
-          value: orders.length ? Math.round(totalKg * 0.62) : null,
-          description: orders.length ? 'Estimated emissions avoided from recovered waste.' : 'No offset can be calculated until loads are processed.',
+          value: orders.length ? Math.round(orders.reduce((sum, o) => {
+            const kg = parseFloat(o.actualKg || o.kg) || 0;
+            const plantAcc = DB.get('acc:' + o.plantId);
+            return sum + (kg * getCO2Factor(o.wasteType, plantAcc?.processingMethod));
+          }, 0)) : null,
+          description: orders.length ? 'Estimated emissions avoided from recovered waste (IPCC 2006 factors).' : 'No offset can be calculated until loads are processed.',
           status: offsetState === 'empty' ? 'empty' : 'active',
           icon: '🌍',
           statusLabel: offsetState === 'empty' ? 'No data' : 'Active',
@@ -3255,9 +3350,13 @@ function initPvChart() {
   // Dump all into current day for simplicity in local demo without real dates over weeks
   const totKg = orders.reduce((s,o)=>s+parseInt(o.actualKg||o.kg), 0);
   kgData[6] = totKg;
-  co2Data[6] = Math.round(totKg * 0.62);
-  
-  window._pvDynamicData = { kg: kgData, co2: co2Data, totKg };
+  co2Data[6] = Math.round(orders.reduce((sum, o) => {
+    const kg = parseInt(o.actualKg || o.kg) || 0;
+    const plantAcc = DB.get('acc:' + o.plantId);
+    return sum + (kg * getCO2Factor(o.wasteType, plantAcc?.processingMethod));
+  }, 0));
+
+  window._pvDynamicData = { kg: kgData, co2: co2Data, totKg, totCO2: co2Data[6] };
 
   pvChartInstance = new Chart(ctx, {
     type: 'bar',
@@ -3287,7 +3386,7 @@ window.updatePvChart = function(period) {
   if(period === 'monthly') {
     pvChartInstance.data.labels = ['Week 1', 'Week 2', 'Week 3', 'This Week'];
     pvChartInstance.data.datasets[0].data = [0, 0, 0, d.totKg];
-    pvChartInstance.data.datasets[1].data = [0, 0, 0, Math.round(d.totKg*0.62)];
+    pvChartInstance.data.datasets[1].data = [0, 0, 0, d.totCO2];
   } else {
     pvChartInstance.data.labels = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Today'];
     pvChartInstance.data.datasets[0].data = d.kg;
@@ -3308,7 +3407,7 @@ window.clearAllHistory = function(role) {
   refreshCurrentView(true);
 }
 
-window.submitPvRequest = function() {
+window.submitPvRequest = async function() {
   const type = document.getElementById('req-type').value;
   const kg = parseInt(document.getElementById('req-kg').value);
   const shift = document.getElementById('req-shift').value;
@@ -3331,7 +3430,9 @@ window.submitPvRequest = function() {
   };
   saveOrder(o);
   addSlaEntry(o);
-  recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+ // INSIDE submitPvRequest
+  await recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+  
   // Notify local roles and publish an operational realtime event
   addWorkflowNotification({
     title: 'Dispatch Created',
@@ -3360,7 +3461,6 @@ window.submitPvRequest = function() {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('DISPATCH_CREATED', [], {
     toast: `New dispatch created for ${nearest.org}.`,
     statusLabel: 'Dispatch live'
@@ -3779,12 +3879,14 @@ async function renderRider(mc, fullRender) {
 
 window.switchRdTab = function(t) { window._rdTab = t; refreshCurrentView(true); }
 
-window.riderAccept = function(id) {
+window.riderAccept = async function(id) {
   const o = getOrder(id); if(!o) return;
   o.status = 'assigned'; o.riderId = SESSION.id; o.riderName = SESSION.name;
   saveOrder(o);
   updateSlaEntry(o.id, { status: 'assigned' });
-  recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+// INSIDE riderAccept
+  await recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  
   addWorkflowNotification({
     title: 'Pickup Accepted',
     body: `${SESSION.name} accepted the pickup for ${o.providerOrg}.`,
@@ -3812,7 +3914,6 @@ window.riderAccept = function(id) {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Rider ${SESSION.name} accepted dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Route assigned'
@@ -3820,11 +3921,11 @@ window.riderAccept = function(id) {
   showToast("✓ Route Added to Batch!");
   showView('v-rd-dash');
 }
-window.riderUpdate = function(id, st) {
+window.riderUpdate = async function(id, st) {
   const o = getOrder(id); if(!o) return;
   o.status = st; saveOrder(o);
   updateSlaEntry(o.id, { status: st });
-  recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
   if (st === 'en_route') {
     addWorkflowNotification({
       title: 'Rider En Route',
@@ -3847,7 +3948,6 @@ window.riderUpdate = function(id, st) {
       url: '/'
     });
   }
-
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Dispatch #${o.id.slice(-6).toUpperCase()} moved to ${st.replace('_', ' ')}.`,
     statusLabel: 'Route moving'
@@ -3865,13 +3965,13 @@ window.openPickupConfirm = function(id) {
   document.getElementById('modal-box').innerHTML = html;
   document.getElementById('modal').classList.add('open');
 }
-window.confirmPickup = function(id) {
+window.confirmPickup = async function(id) {
   const kg = document.getElementById('m-kg').value;
   if(!kg) return showToast("⚠ Enter weight.");
   const o = getOrder(id); o.status = 'picked_up'; o.actualKg = kg; o.quality = document.getElementById('m-qual').value;
   saveOrder(o);
   updateSlaEntry(o.id, { pickupTs: ts(), status: 'picked_up' });
-  recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
   addWorkflowNotification({
     title: 'Pickup Confirmed',
     body: `${SESSION.name} collected ${kg}kg from ${o.providerOrg}.`,
@@ -3890,7 +3990,6 @@ window.confirmPickup = function(id) {
     relatedId: o.id,
     url: '/'
   });
-
   publishOperationalEvent('PICKUP_CONFIRMED', [], {
     toast: `Pickup confirmed for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Pickup live'
@@ -3941,11 +4040,33 @@ window.openIntegrityScan = function(orderId) {
   box.classList.add('integrity-modal');
   box.classList.add('glass-card');
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const events = getOrderLedgerEvents(orderId);
+    let isTampered = false;
+
+    for (const e of events) {
+      if (!e.hash) {
+        isTampered = true;
+        break;
+      }
+
+      const { hash: storedHash, ...payload } = e;
+      try {
+        const expectedHash = await generateLedgerHash(payload);
+        if (normalizeHash(storedHash) !== normalizeHash(expectedHash)) {
+          isTampered = true;
+          break;
+        }
+      } catch (error) {
+        console.error('Failed to verify ledger hash:', error);
+        isTampered = true;
+        break;
+      }
+    }
+
     const integrity = getOrderIntegrity(order);
-    const statusClass = integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red';
-    const statusLabel = integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk';
+    const statusClass = isTampered ? 'badge-red' : (integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red');
+    const statusLabel = isTampered ? 'Cryptographic Tampering Detected' : (integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk');
 
     let timeline = '';
     if (events.length) {
@@ -3980,7 +4101,7 @@ window.openIntegrityScan = function(orderId) {
 
     box.innerHTML = `
       <h3 class="modal-title">Integrity Scan</h3>
-      <p class="modal-sub">Ledger hash and custody chain validated.</p>
+      <p class="modal-sub">${isTampered ? 'One or more ledger hashes failed cryptographic verification.' : 'Ledger hash and custody chain validated.'}</p>
       <div class="integrity-summary">
         <div>
           <div style="font-size:12px; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Trust Score</div>
@@ -4279,6 +4400,14 @@ async function renderPlant(mc, fullRender) {
           <div class="form-group"><label class="form-label">Biogas Produced (m³)</label><input class="form-input" id="out-bio" type="number" step="0.1"></div>
           <div class="form-group"><label class="form-label">Compost Yield (kg)</label><input class="form-input" id="out-comp" type="number" step="0.1"></div>
           <div class="form-group"><label class="form-label">Digester Temp (°C) <span style="font-size:11px; color:var(--amber)">(Auto-detected)</span></label><input class="form-input" id="out-temp" type="number" step="0.1" readonly placeholder="Fetching live temp..."></div>
+          <div class="form-group">
+            <label class="form-label">Processing Method <span style="font-size:11px; color:var(--text-muted)">(Applied to CO₂ offset calculations)</span></label>
+            <select class="form-input" id="out-method">
+              <option value="anaerobic_digestion">Anaerobic Digestion</option>
+              <option value="composting">Composting</option>
+              <option value="biogas">Biogas Recovery</option>
+            </select>
+          </div>
           <button class="btn btn-primary btn-full" onclick="savePlantLog()">Save Record</button>
         </div>
       </div>
@@ -4289,6 +4418,11 @@ async function renderPlant(mc, fullRender) {
             document.getElementById('out-temp').value = Math.round(w.temperature + 15);
          }
       });
+      // Pre-select the plant's saved processing method
+      const methodEl = document.getElementById('out-method');
+      if (methodEl && SESSION.processingMethod) {
+        methodEl.value = SESSION.processingMethod;
+      }
     }
   }
 }
@@ -4310,7 +4444,7 @@ window.openPlantConfirm = function(id) {
   document.getElementById('modal').classList.add('open');
 }
 
-window.confirmPlantReceipt = function(id) {
+window.confirmPlantReceipt = async function(id) {
   const o = getOrder(id); if(!o) return;
   if (o.status === 'completed') return showToast('Order already processed.');
   const score = document.getElementById('p-score').value || 0;
@@ -4358,8 +4492,8 @@ window.confirmPlantReceipt = function(id) {
 
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
-  recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
-  recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+  await recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   addWorkflowNotification({
     title: 'Plant Confirmation Received',
     body: `${o.plantName} confirmed the delivery for ${o.providerOrg}.`,
@@ -4418,7 +4552,8 @@ window.confirmPlantReceipt = function(id) {
   if (route.start && route.end) {
     const distanceKm = parseFloat(distanceKm(route.start.lat, route.start.lng, route.end.lat, route.end.lng).toFixed(1));
     const emissionKg = parseFloat((distanceKm * 0.21).toFixed(2));
-    const offsetKg = parseFloat((kgProcessed * 0.62).toFixed(2));
+    const plantAcc = DB.get('acc:' + o.plantId);
+    const offsetKg = parseFloat((kgProcessed * getCO2Factor(o.wasteType, plantAcc?.processingMethod)).toFixed(2));
     const score = Math.max(10, Math.min(100, Math.round((offsetKg / Math.max(emissionKg, 1)) * 100)));
     addEmissionsEntry({
       id: 'ems-' + uid(),
@@ -4452,9 +4587,29 @@ window.confirmPlantReceipt = function(id) {
 window.savePlantLog = function() {
   const bio = document.getElementById('out-bio').value;
   const comp = document.getElementById('out-comp').value;
-  if(!bio && !comp) return window.showToast("⚠ Enter output values.");
-  
-  DB.set('log:'+uid(), { id: uid(), ts: ts(), plantId: SESSION.id, bio, comp, temp: document.getElementById('out-temp').value });
+
+  if(!bio && !comp)
+    return window.showToast("⚠ Enter output values.");
+
+  // Persist processing method to plant account so CO₂ factor is applied consistently
+  const method =
+    document.getElementById('out-method')?.value ||
+    'anaerobic_digestion';
+
+  if (SESSION.processingMethod !== method) {
+    SESSION.processingMethod = method;
+    DB.set('acc:' + SESSION.id, SESSION, { localOnly: true });
+  }
+
+  DB.set('log:' + uid(), {
+    id: uid(),
+    ts: ts(),
+    plantId: SESSION.id,
+    bio,
+    comp,
+    temp: document.getElementById('out-temp').value
+  });
+
   addWorkflowNotification({
     title: 'Plant Output Logged',
     body: `Your plant output record was saved successfully.`,
@@ -4463,6 +4618,7 @@ window.savePlantLog = function() {
     priority: 'normal',
     url: '/'
   });
+
   window.showToast("✓ Output logged! Automated msg sent.");
   showView('v-pl-dash');
 }
@@ -4951,5 +5107,10 @@ document.addEventListener('DOMContentLoaded', () => {
         navToggleBtn.addEventListener('click', () => {
             window.toggleTheme();
         });
+    }
+
+    // Initialize Accessibility Manager (Floating panel & options)
+    if (window.AccessibilityManager) {
+        window.AccessibilityManager.init();
     }
 });
