@@ -4,7 +4,7 @@
 // Supports: Offline fallback, Background Sync, Push Notifications
 // ══════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'regenx-v4';
+const CACHE_VERSION = 'regenx-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SYNC_TAG = 'regenx-order-sync';
