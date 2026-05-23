@@ -6,18 +6,19 @@ import { TrustProtocol } from './trust.js';
 import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
+import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
 import { ESGReporter } from './esg-reporter.js';
-
 const STORAGE_KEY_PREFIX = "regenx-v3:";
-const TRUST_LEDGER_KEY = "trust-ledger";
-const ESG_ALERTS_KEY = "esg-alerts";
-const CREDIT_LEDGER_KEY = "credit-ledger";
-const SLA_LEDGER_KEY = "sla-ledger";
-const ENERGY_LEDGER_KEY = "energy-ledger";
-const SENSOR_LEDGER_KEY = "sensor-ledger";
-const EMISSIONS_LEDGER_KEY = "emissions-ledger";
-const QUALITY_LEDGER_KEY = "quality-ledger";
+const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
+const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
+const CREDIT_LEDGER_KEY = STORAGE_KEY_PREFIX + "credit-ledger";
+const SLA_LEDGER_KEY = STORAGE_KEY_PREFIX + "sla-ledger";
+const ENERGY_LEDGER_KEY = STORAGE_KEY_PREFIX + "energy-ledger";
+const SENSOR_LEDGER_KEY = STORAGE_KEY_PREFIX + "sensor-ledger";
+const EMISSIONS_LEDGER_KEY = STORAGE_KEY_PREFIX + "emissions-ledger";
+const QUALITY_LEDGER_KEY = STORAGE_KEY_PREFIX + "quality-ledger";
+const AUTOMATION_PIPELINE_KEY = STORAGE_KEY_PREFIX + "automation-pipeline";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -30,6 +31,9 @@ if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data?.type === 'SYNC_COMPLETE') {
           window.showToast(event.data.message);
+          if (typeof flushOfflineQueue === 'function') {
+            flushOfflineQueue();
+          }
         }
         if (event.data?.type === 'NAVIGATE') {
           window.showView && window.showView('v-rd-dash');
@@ -58,6 +62,91 @@ window.requestPushPermission = async function() {
   }
 };
 
+/**
+ * @function getAlertPreference
+ * @description Reads the persisted smart alert preference for the current user.
+ * @returns {boolean} True if alerts are enabled.
+ */
+function getAlertPreference() {
+  try {
+    if (!SESSION || !SESSION.id) return false; // ← add this guard
+    return window.localStorage.getItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id
+    ) === 'true';
+  } catch { return false; }
+}
+
+/**
+ * @function setAlertPreference
+ * @description Persists the smart alert preference for the current user.
+ * @param {boolean} enabled - Whether alerts should be enabled.
+ * @returns {void}
+ */
+function setAlertPreference(enabled) {
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY_PREFIX + 'smart-alerts:' + SESSION.id,
+      String(enabled)
+    );
+  } catch { /* ignore */ }
+}
+
+/**
+ * @function toggleSmartAlerts
+ * @description Toggles Smart Dispatch Alerts on or off. Persists preference
+ * to localStorage, updates button UI with GSAP animation, and deregisters
+ * Background Sync when disabling.
+ * @returns {Promise<void>}
+ */
+window.toggleSmartAlerts = async function() {
+  const btn = document.getElementById('btn-smart-alerts');
+  const isEnabled = getAlertPreference();
+
+  if (isEnabled) {
+    // DISABLE PATH
+    setAlertPreference(false);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync-pause'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'transparent';
+      btn.style.border = '2px solid var(--red)';
+      btn.style.color = 'var(--red)';
+      btn.textContent = '🔔 Enable Smart Alerts'; // ← was wrong, now correct
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔕 Smart Alerts disabled.');
+    return;
+  }
+
+  // ENABLE PATH
+  if (!('Notification' in window)) {
+    window.showToast('⚠ Notifications not supported in this browser.');
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission === 'granted') {
+    setAlertPreference(true);
+    if (window._swReg && 'sync' in window._swReg) {
+      try { await window._swReg.sync.register('regenx-order-sync'); } catch {}
+    }
+    if (btn) {
+      btn.style.background = 'linear-gradient(135deg, #F59E0B, #D97706)';
+      btn.style.border = 'none';
+      btn.style.color = '#fff';
+      btn.textContent = '🔕 Disable Smart Alerts'; // ← correct, after enabling show disable
+      if (window.gsap) {
+        gsap.fromTo(btn, { scale: 1 }, { scale: 1.05, duration: 0.15, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+      }
+    }
+    window.showToast('🔔 Smart Alerts enabled!');
+  } else {
+    window.showToast('⚠ Notifications blocked. Enable in browser settings.');
+  }
+};
+
 // ── Trigger Background Sync when going offline ──
 window.addEventListener('offline', () => {
   window.showToast && window.showToast('📶 Offline mode — changes queued for sync.');
@@ -67,6 +156,7 @@ window.addEventListener('offline', () => {
 });
 window.addEventListener('online', () => {
   window.showToast && window.showToast('✅ Back online! Syncing queued data...');
+  if (window.syncPendingActions) window.syncPendingActions();
 });
 
 
@@ -78,11 +168,44 @@ const DEFAULT_LOCALITIES = [
 
 const WASTE_TYPES = ['Food waste (wet)', 'Vegetable scraps', 'Mixed kitchen waste', 'Biodegradable packaging'];
 const SHIFTS = ['Morning Shift (08:00 - 12:00)', 'Evening Shift (16:00 - 20:00)'];
+const NOTIF_STORE_KEY = 'notifications';
+const OFFLINE_QUEUE_KEY = 'offline-sync-queue';
+const MAX_NOTIF_HISTORY = 60;
+const DEDUP_WINDOW_MS = 30000;
 
 // ── DB HELPER ──
 const DB = {
   get: (key) => { try { const r = window.localStorage.getItem(STORAGE_KEY_PREFIX + key); return r ? JSON.parse(r) : null; } catch { return null; } },
-  set: (key, val) => { try { window.localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(val)); return true; } catch { return false; } },
+  set: (key, val, options = {}) => { try {
+    window.localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(val));
+    if (!options.silent && ReGenXRealtime) {
+      ReGenXRealtime.syncStorageMutation({
+        updates: [{ key: STORAGE_KEY_PREFIX + key, value: val, action: 'set' }],
+        rooms: options.rooms,
+        eventType: options.eventType || 'KPI_UPDATED',
+        meta: options.meta || {}
+      });
+    }
+    // Write-through to Appwrite — fire-and-forget, falls back to offline queue
+    if (!options.silent && !options.localOnly && val?.id) {
+      if (key.startsWith('ord:') && window.CloudSync) {
+        if (navigator.onLine && window.CloudSync.isLive) {
+          window.CloudSync.pushDocument(window.CloudSync.config?.ordersCollectionId, val)
+            .catch(() => window.CloudSync.queueOfflineWrite(key, val));
+        } else {
+          window.CloudSync.queueOfflineWrite(key, val);
+        }
+      } else if (key.startsWith('acc:') && window.CloudSync) {
+        if (navigator.onLine && window.CloudSync.isLive) {
+          window.CloudSync.pushAccount(val)
+            .catch(() => window.CloudSync.queueOfflineWrite(key, val));
+        } else {
+          window.CloudSync.queueOfflineWrite(key, val);
+        }
+      }
+    }
+    return true;
+  } catch { return false; } },
   list: (prefix) => {
     try {
       const keys = [];
@@ -95,6 +218,333 @@ const DB = {
   }
 };
 
+function loadNotifications() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_PREFIX + NOTIF_STORE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveNotifications(notifs) {
+  try { window.localStorage.setItem(STORAGE_KEY_PREFIX + NOTIF_STORE_KEY, JSON.stringify(notifs)); } catch { /* ignore */ }
+}
+
+function getNotificationsForRole(role) {
+  const all = loadNotifications();
+  return all.filter(n => n.role === 'all' || n.role === role).sort((a, b) => b.ts - a.ts);
+}
+
+function getUnreadNotificationCount(role) {
+  return getNotificationsForRole(role).filter(n => !n.read).length;
+}
+
+function loadOfflineQueue() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_PREFIX + OFFLINE_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try { window.localStorage.setItem(STORAGE_KEY_PREFIX + OFFLINE_QUEUE_KEY, JSON.stringify(queue)); } catch { /* ignore */ }
+}
+
+function updateNotificationBadge() {
+  const badge = document.getElementById('notif-count');
+  const unread = getUnreadNotificationCount(SESSION.role);
+  if (badge) {
+    badge.textContent = unread > 0 ? unread : '0';
+    badge.style.display = 'inline-flex';
+    badge.style.opacity = unread ? '1' : '0.65';
+  }
+  const label = document.getElementById('notif-unread-count');
+  if (label) {
+    label.textContent = `${unread} unread notification${unread === 1 ? '' : 's'}`;
+  }
+}
+
+function updateOfflineQueueIndicator() {
+  const queueCount = loadOfflineQueue().length;
+  const statusLabel = document.getElementById('notif-sync-status');
+  if (statusLabel) {
+    statusLabel.textContent = queueCount
+      ? `${queueCount} pending sync action${queueCount === 1 ? '' : 's'}`
+      : 'All activity synced';
+    statusLabel.classList.toggle('sync-pending', queueCount > 0);
+  }
+}
+
+function isDuplicateNotification(title, body) {
+  const now = Date.now();
+  const duplicates = loadNotifications().filter(n => n.title === title && n.body === body && (now - n.ts) < DEDUP_WINDOW_MS);
+  return duplicates.length > 0;
+}
+
+function sendBrowserNotification(title, body, url = '/') {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const notification = new Notification(title, {
+      body,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/icon-72x72.png',
+      data: { url }
+    });
+    notification.onclick = () => window.focus() && window.location.assign(url);
+  } catch (e) {
+    console.warn('Browser notification failed', e);
+  }
+}
+
+function pushActivityFeed(event) {
+  const feed = document.getElementById('gw-feed');
+  if (!feed) return;
+  const item = document.createElement('div');
+  item.className = 'gw-item';
+  item.innerHTML = `
+    <div>${event.icon || '🔔'} ${event.title}</div>
+    <div class="gw-time">${fmtDate(event.ts || Date.now())}</div>
+  `;
+  const first = feed.firstChild;
+  if (first && first.classList.contains('gw-item') && first.textContent.includes('No network activity')) {
+    feed.innerHTML = '';
+  }
+  feed.prepend(item);
+  while (feed.children.length > 6) feed.removeChild(feed.lastChild);
+}
+
+function addWorkflowNotification({ title, body, role = 'all', type = 'workflow', priority = 'normal', relatedId = null, url = '/' }) {
+  if (!title || !body) return;
+  if (isDuplicateNotification(title, body)) return;
+  const notifications = loadNotifications();
+  const item = {
+    id: uid(),
+    ts: ts(),
+    title,
+    body,
+    type,
+    role,
+    priority,
+    relatedId,
+    url,
+    read: false
+  };
+  notifications.unshift(item);
+  saveNotifications(notifications.slice(0, MAX_NOTIF_HISTORY));
+  updateNotificationBadge();
+  renderNotificationCenter();
+  if (priority === 'high' || Notification.permission === 'granted') {
+    sendBrowserNotification(title, body, url);
+  }
+  if (window.showToast) {
+    window.showToast(`🔔 ${title}`);
+  }
+  pushActivityFeed({ title, icon: priority === 'high' ? '🚨' : '🔔', ts: item.ts });
+}
+
+window.openNotificationCenter = function(force) {
+  const drawer = document.getElementById('notification-drawer');
+  if (!drawer) return;
+  const isOpen = force === undefined ? !drawer.classList.contains('open') : force;
+  drawer.classList.toggle('open', isOpen);
+  if (isOpen) {
+    renderNotificationCenter();
+    updateNotificationBadge();
+    updateOfflineQueueIndicator();
+  }
+};
+
+function renderNotificationCenter() {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  const notifications = getNotificationsForRole(SESSION.role);
+  if (!notifications.length) {
+    list.innerHTML = `<div class="notification-empty">No notifications yet. Workflow alerts will appear here in real time.</div>`;
+    return;
+  }
+  list.innerHTML = notifications.map(n => `
+    <div class="notification-card ${n.read ? 'read' : 'unread'}">
+      <div class="notification-card-header">
+        <div class="notification-card-title">${n.title}</div>
+        <div class="notification-card-meta">${fmtDate(n.ts)}</div>
+      </div>
+      <div class="notification-card-body">${n.body}</div>
+      <div class="notification-card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="markNotificationRead('${n.id}')">Mark read</button>
+        <button class="btn btn-ghost btn-sm" onclick="window.location.href='${n.url}'">View</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.markNotificationRead = function(id) {
+  const notifications = loadNotifications();
+  const target = notifications.find(n => n.id === id);
+  if (target) target.read = true;
+  saveNotifications(notifications);
+  renderNotificationCenter();
+  updateNotificationBadge();
+};
+
+window.markAllNotificationsRead = function() {
+  const notifications = loadNotifications().map(n => ({ ...n, read: true }));
+  saveNotifications(notifications);
+  renderNotificationCenter();
+  updateNotificationBadge();
+};
+
+function queueOfflineAction(action) {
+  if (!action || !action.type) return;
+  const queue = loadOfflineQueue();
+  queue.push({ id: uid(), ts: ts(), ...action });
+  saveOfflineQueue(queue);
+  updateOfflineQueueIndicator();
+}
+
+async function processOfflineAction(action) {
+  if (!action || !action.type) return;
+  if (action.type === 'sync-order') {
+    if (window.CloudSync && window.CloudSync.isLive && navigator.onLine) {
+      window.CloudSync.pushDocument('orders', action.payload);
+    }
+  }
+  if (action.type === 'sync-notification') {
+    // notifications are already stored locally; this entry is a marker for remote sync
+  }
+}
+
+async function flushOfflineQueue() {
+  const queue = loadOfflineQueue();
+  if (!queue.length) return;
+  for (const action of queue) {
+    await processOfflineAction(action);
+  }
+  saveOfflineQueue([]);
+  updateOfflineQueueIndicator();
+  addWorkflowNotification({
+    title: 'Offline Sync Completed',
+    body: `${queue.length} queued action${queue.length === 1 ? '' : 's'} were synced successfully.`,
+    role: SESSION.role || 'all',
+    type: 'sync',
+    priority: 'normal'
+  });
+}
+
+window.syncPendingActions = async function() {
+  if (!navigator.onLine) return;
+  if (window._swReg && 'sync' in window._swReg) {
+    window._swReg.sync.register('regenx-order-sync').catch(() => {});
+  }
+  await flushOfflineQueue();
+};
+
+window.handleRealtimeEvent = function(event) {
+  if (!event || !event.type) return;
+  const payload = event.payload || {};
+  switch (event.type) {
+    case 'dispatch-created':
+      addWorkflowNotification({
+        title: 'New Nearby Pickup Request',
+        body: `${payload.providerOrg || 'A provider'} requested ${payload.kg || 'some'}kg of ${payload.wasteType || 'waste'}.`,
+        role: 'rider',
+        type: 'dispatch-created',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'pickup-assigned':
+      addWorkflowNotification({
+        title: 'Pickup Accepted',
+        body: `${payload.riderName || 'A rider'} has accepted the pickup request.`,
+        role: 'provider',
+        type: 'pickup-assigned',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'pickup-confirmed':
+      addWorkflowNotification({
+        title: 'Waste Collected',
+        body: `${payload.riderName || 'Your rider'} has picked up the load.`,
+        role: 'plant',
+        type: 'pickup-confirmed',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'delivery-confirmed':
+      addWorkflowNotification({
+        title: 'Plant Confirmation Received',
+        body: `${payload.plantName || 'A plant'} confirmed the delivery.`,
+        role: 'provider',
+        type: 'delivery-confirmed',
+        priority: 'normal',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'token-credited':
+      addWorkflowNotification({
+        title: 'Reward Credited',
+        body: `${payload.tokens || 0} $RGX have been added to your balance.`,
+        role: 'provider',
+        type: 'token-credited',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'ai-warning':
+      addWorkflowNotification({
+        title: 'AI Contamination Alert',
+        body: payload.body || 'A contamination risk was detected on pickup.',
+        role: 'rider',
+        type: 'ai-warning',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    default:
+      addWorkflowNotification({
+        title: event.title || 'Workflow Update',
+        body: event.body || 'A new system event occurred.',
+        role: SESSION.role || 'all',
+        type: event.type,
+        priority: 'normal',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+  }
+};
+
+function getRealtimeRoomsForRole(role) {
+  const rooms = ['network_room'];
+  if (role === 'provider') rooms.push('providers_room');
+  if (role === 'rider') rooms.push('riders_room');
+  if (role === 'plant') rooms.push('plants_room');
+  rooms.push('admin_room');
+  return Array.from(new Set(rooms));
+}
+
+function publishOperationalEvent(type, updates = [], meta = {}, rooms = null) {
+  if (!ReGenXRealtime) return;
+  ReGenXRealtime.emitOperationalEvent({
+    type,
+    rooms: rooms || getRealtimeRoomsForRole(SESSION.role),
+    updates,
+    meta
+  });
+}
 /**
  * Load trust ledger events from localStorage.
  * @returns {Array<Object>} Ledger events.
@@ -103,9 +553,23 @@ function loadTrustLedger() {
   try {
     const raw = window.localStorage.getItem(TRUST_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
+  }
+}
+
+/**
+ * @function handleLedgerStorageError
+ * @description Centralized handler for ledger localStorage exceptions (e.g. quota exceeded).
+ * @param {Error} err - Exception object.
+ * @returns {void}
+ */
+function handleLedgerStorageError(err) {
+  console.error("Ledger storage error:", err);
+  if (window.showToast) {
+    window.showToast("⚠️ Storage limit exceeded. Stale ledger entries evicted.");
   }
 }
 
@@ -114,7 +578,11 @@ function loadTrustLedger() {
  * @param {Array<Object>} events - Ledger events.
  */
 function saveTrustLedger(events) {
-  try { window.localStorage.setItem(TRUST_LEDGER_KEY, JSON.stringify(events)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(events) ? events.slice(-200) : [];
+    window.localStorage.setItem(TRUST_LEDGER_KEY, JSON.stringify(capped));
+    ReGenXRealtime?.syncRawKey(TRUST_LEDGER_KEY, capped, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -178,6 +646,7 @@ function recordTrustEvent(order, event, actorRole, coords = {}) {
   if (!order) return;
   const ledger = loadTrustLedger();
   const entry = {
+    _v: 1,
     id: uid(),
     orderId: order.id,
     event,
@@ -240,22 +709,22 @@ function renderTrustIndexCard() {
     });
   }
   const badgeClass = score >= 90 ? 'badge-green' : score >= 75 ? 'badge-blue' : score >= 60 ? 'badge-amber' : 'badge-red';
-  return `
-    <div class="glass-card trust-index-card" style="margin-bottom:24px;">
-      <div class="between" style="margin-bottom:12px;">
-        <div>
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Public Trust Index</div>
-          <div style="font-size:20px; font-weight:800; margin-top:4px;">${score}/100</div>
+      return `
+        <div class="glass-card trust-index-card" style="margin-bottom:24px;">
+          <div class="between" style="margin-bottom:12px;">
+            <div>
+              <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Public Trust Index</div>
+              <div style="font-size:20px; font-weight:800; margin-top:4px;">${score}/100</div>
+            </div>
+            <span class="badge ${badgeClass}">${label}</span>
+          </div>
+          <div class="trust-index-bar"><span style="width:${score}%;"></span></div>
+          <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+            <div>${orderCount} verified order${orderCount === 1 ? '' : 's'}</div>
+            <div>${anomalyRate}% anomaly rate</div>
+          </div>
         </div>
-        <span class="badge ${badgeClass}">${label}</span>
-      </div>
-      <div class="trust-index-bar"><span style="width:${score}%;"></span></div>
-      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
-        <div>${orderCount} verified order${orderCount === 1 ? '' : 's'}</div>
-        <div>${anomalyRate}% anomaly rate</div>
-      </div>
-    </div>
-  `;
+      `;
 }
 
 /**
@@ -266,7 +735,8 @@ function loadEsgAlerts() {
   try {
     const raw = window.localStorage.getItem(ESG_ALERTS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -277,7 +747,11 @@ function loadEsgAlerts() {
  * @param {Array<Object>} alerts - Alerts to save.
  */
 function saveEsgAlerts(alerts) {
-  try { window.localStorage.setItem(ESG_ALERTS_KEY, JSON.stringify(alerts)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(alerts) ? alerts.slice(-200) : [];
+    window.localStorage.setItem(ESG_ALERTS_KEY, JSON.stringify(capped));
+    ReGenXRealtime?.syncRawKey(ESG_ALERTS_KEY, capped, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -286,6 +760,7 @@ function saveEsgAlerts(alerts) {
  */
 function addEsgAlert(alert) {
   const alerts = loadEsgAlerts();
+  if (alert) alert._v = 1;
   alerts.push(alert);
   saveEsgAlerts(alerts);
 }
@@ -368,15 +843,15 @@ function addEsgAlertsForOrder(order) {
  */
 function renderComplianceWidget() {
   const alerts = loadEsgAlerts().filter(a => !a.resolved).sort((a, b) => b.ts - a.ts);
-  const items = alerts.slice(0, 3).map(a => `
-    <div class="compliance-item">
-      <div>
-        <div class="compliance-title">${a.message}</div>
-        <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
-      </div>
-      <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
-    </div>
-  `).join('');
+      const items = alerts.slice(0, 3).map(a => `
+        <div class="compliance-item">
+          <div>
+            <div class="compliance-title">${a.message}</div>
+            <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
+          </div>
+          <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
+        </div>
+      `).join('');
 
   return `
     <div class="glass-card compliance-card" style="margin-bottom:24px;">
@@ -407,7 +882,8 @@ function loadCreditLedger() {
   try {
     const raw = window.localStorage.getItem(CREDIT_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -418,7 +894,11 @@ function loadCreditLedger() {
  * @param {Array<Object>} entries - Ledger entries.
  */
 function saveCreditLedger(entries) {
-  try { window.localStorage.setItem(CREDIT_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-200) : [];
+    window.localStorage.setItem(CREDIT_LEDGER_KEY, JSON.stringify(capped));
+    ReGenXRealtime?.syncRawKey(CREDIT_LEDGER_KEY, capped, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room'] });
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -427,6 +907,7 @@ function saveCreditLedger(entries) {
  */
 function addCreditEntry(entry) {
   const entries = loadCreditLedger();
+  if (entry) entry._v = 1;
   entries.push(entry);
   saveCreditLedger(entries);
 }
@@ -486,7 +967,8 @@ function loadSlaLedger() {
   try {
     const raw = window.localStorage.getItem(SLA_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -497,7 +979,11 @@ function loadSlaLedger() {
  * @param {Array<Object>} entries - SLA entries.
  */
 function saveSlaLedger(entries) {
-  try { window.localStorage.setItem(SLA_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-200) : [];
+    window.localStorage.setItem(SLA_LEDGER_KEY, JSON.stringify(capped));
+    ReGenXRealtime?.syncRawKey(SLA_LEDGER_KEY, capped, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -508,6 +994,7 @@ function addSlaEntry(order) {
   if (!order) return;
   const entries = loadSlaLedger();
   entries.push({
+    _v: 1,
     id: 'sla-' + uid(),
     orderId: order.id,
     org: order.providerOrg,
@@ -560,6 +1047,16 @@ function getSlaSummary() {
  */
 function renderSlaWidget() {
   const summary = getSlaSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⏱️',
+      title: 'No dispatch SLA data',
+      description: 'Dispatch activity tracking will begin once orders are processed.',
+      subtext: 'SLA metrics and on-time performance will appear after your first completed dispatch.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sla-card" style="margin-bottom:24px;">
@@ -587,7 +1084,8 @@ function loadEnergyLedger() {
   try {
     const raw = window.localStorage.getItem(ENERGY_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -598,7 +1096,11 @@ function loadEnergyLedger() {
  * @param {Array<Object>} entries - Energy entries.
  */
 function saveEnergyLedger(entries) {
-  try { window.localStorage.setItem(ENERGY_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-200) : [];
+    window.localStorage.setItem(ENERGY_LEDGER_KEY, JSON.stringify(capped));
+    ReGenXRealtime?.syncRawKey(ENERGY_LEDGER_KEY, capped, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'plants_room'] });
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -607,6 +1109,7 @@ function saveEnergyLedger(entries) {
  */
 function addEnergyEntry(entry) {
   const entries = loadEnergyLedger();
+  if (entry) entry._v = 1;
   entries.push(entry);
   saveEnergyLedger(entries);
 }
@@ -629,6 +1132,16 @@ function getEnergySummary() {
  */
 function renderEnergyWidget() {
   const summary = getEnergySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⚡',
+      title: 'No energy analytics yet',
+      description: 'Energy yield scoring is available once plant processing data is recorded.',
+      subtext: 'Complete your first intake and log biogas output to see efficiency metrics.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card energy-card" style="margin-bottom:24px;">
@@ -656,7 +1169,8 @@ function loadSensorLedger() {
   try {
     const raw = window.localStorage.getItem(SENSOR_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -667,7 +1181,10 @@ function loadSensorLedger() {
  * @param {Array<Object>} entries - Sensor snapshots.
  */
 function saveSensorLedger(entries) {
-  try { window.localStorage.setItem(SENSOR_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-50) : [];
+    window.localStorage.setItem(SENSOR_LEDGER_KEY, JSON.stringify(capped));
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -676,6 +1193,7 @@ function saveSensorLedger(entries) {
  */
 function addSensorSnapshot(snapshot) {
   const entries = loadSensorLedger();
+  if (snapshot) snapshot._v = 1;
   entries.push(snapshot);
   saveSensorLedger(entries.slice(-50));
 }
@@ -700,6 +1218,17 @@ function getSensorReliabilitySummary() {
  */
 function renderSensorWidget() {
   const summary = getSensorReliabilitySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '📡',
+      title: 'No IoT bins connected',
+      description: 'Sensor network monitoring requires registered IoT bins.',
+      subtext: 'Register your first waste bin to track fill levels and receive alerts.',
+      statusLabel: 'Idle',
+      tone: 'inactive',
+      actionHtml: SESSION.role === 'provider' ? '<button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')" style="margin-top:8px;">Connect Bins →</button>' : ''
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sensor-reliability-card" style="margin-bottom:24px;">
@@ -727,7 +1256,8 @@ function loadEmissionsLedger() {
   try {
     const raw = window.localStorage.getItem(EMISSIONS_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -738,7 +1268,10 @@ function loadEmissionsLedger() {
  * @param {Array<Object>} entries - Emissions entries.
  */
 function saveEmissionsLedger(entries) {
-  try { window.localStorage.setItem(EMISSIONS_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-200) : [];
+    window.localStorage.setItem(EMISSIONS_LEDGER_KEY, JSON.stringify(capped));
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -747,6 +1280,7 @@ function saveEmissionsLedger(entries) {
  */
 function addEmissionsEntry(entry) {
   const entries = loadEmissionsLedger();
+  if (entry) entry._v = 1;
   entries.push(entry);
   saveEmissionsLedger(entries);
 }
@@ -770,6 +1304,16 @@ function getEmissionsSummary() {
  */
 function renderEmissionsWidget() {
   const summary = getEmissionsSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '🌍',
+      title: 'No emissions data recorded',
+      description: 'Route emissions tracking requires completed deliveries.',
+      subtext: 'Finish your first delivery to calculate carbon offset and emissions impact.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card emissions-card" style="margin-bottom:24px;">
@@ -797,7 +1341,8 @@ function loadQualityLedger() {
   try {
     const raw = window.localStorage.getItem(QUALITY_LEDGER_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(e => e && e._v === 1);
   } catch {
     return [];
   }
@@ -808,7 +1353,10 @@ function loadQualityLedger() {
  * @param {Array<Object>} entries - Quality entries.
  */
 function saveQualityLedger(entries) {
-  try { window.localStorage.setItem(QUALITY_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    const capped = Array.isArray(entries) ? entries.slice(-200) : [];
+    window.localStorage.setItem(QUALITY_LEDGER_KEY, JSON.stringify(capped));
+  } catch (err) { handleLedgerStorageError(err); }
 }
 
 /**
@@ -817,6 +1365,7 @@ function saveQualityLedger(entries) {
  */
 function addQualityEntry(entry) {
   const entries = loadQualityLedger();
+  if (entry) entry._v = 1;
   entries.push(entry);
   saveQualityLedger(entries);
 }
@@ -858,6 +1407,114 @@ function renderQualityWidget() {
   `;
 }
 
+/**
+ * Load automation pipeline tasks.
+ * @returns {Array<Object>} Pipeline tasks.
+ */
+function loadAutomationPipeline() {
+  try {
+    const raw = window.localStorage.getItem(AUTOMATION_PIPELINE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save automation pipeline tasks.
+ * @param {Array<Object>} tasks - Pipeline tasks.
+ */
+function saveAutomationPipeline(tasks) {
+  try { window.localStorage.setItem(AUTOMATION_PIPELINE_KEY, JSON.stringify(tasks)); } catch { /* ignore */ }
+}
+
+/**
+ * Seed default automation tasks for the admin pipeline.
+ * @returns {Array<Object>} Seeded tasks.
+ */
+function seedAutomationPipeline() {
+  const existing = loadAutomationPipeline();
+  if (existing.length) return existing;
+  const tasks = [
+    { id: 'auto-' + uid(), title: 'Triage new issues', owner: 'Unassigned', status: 'queued', priority: 'high', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Assign reviewers to PRs', owner: 'Unassigned', status: 'queued', priority: 'medium', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Label GSSoC issues', owner: 'Unassigned', status: 'queued', priority: 'high', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Update project board', owner: 'Unassigned', status: 'queued', priority: 'low', ts: ts() }
+  ];
+  saveAutomationPipeline(tasks);
+  return tasks;
+}
+
+/**
+ * Update a pipeline task.
+ * @param {string} id - Task id.
+ * @param {Object} patch - Partial task fields.
+ */
+window.updateAutomationTask = function(id, patch) {
+  const tasks = loadAutomationPipeline();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  Object.assign(task, patch);
+  saveAutomationPipeline(tasks);
+  refreshCurrentView(true);
+}
+
+/**
+ * Auto-assign a queued task to the current user.
+ * @param {string} id - Task id.
+ */
+window.autoAssignTask = function(id) {
+  updateAutomationTask(id, { owner: SESSION.name || 'Admin', status: 'active' });
+}
+
+/**
+ * Auto-assign the next queued task.
+ */
+window.autoAssignNext = function() {
+  const tasks = loadAutomationPipeline();
+  const next = tasks.find(t => t.status === 'queued');
+  if (!next) return showToast('✓ No queued tasks left.');
+  updateAutomationTask(next.id, { owner: SESSION.name || 'Admin', status: 'active' });
+}
+
+/**
+ * Get automation pipeline summary.
+ * @returns {{queued:number, active:number, done:number}}
+ */
+function getAutomationSummary() {
+  const tasks = loadAutomationPipeline();
+  return {
+    queued: tasks.filter(t => t.status === 'queued').length,
+    active: tasks.filter(t => t.status === 'active').length,
+    done: tasks.filter(t => t.status === 'done').length
+  };
+}
+
+/**
+ * Render automation pipeline widget.
+ * @returns {string} HTML string.
+ */
+function renderAutomationWidget() {
+  const summary = getAutomationSummary();
+  return `
+    <div class="glass-card automation-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Open Source Automation</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.queued} queued</div>
+        </div>
+        <span class="badge badge-blue">Admin Pipeline</span>
+      </div>
+      <div class="automation-bar"><span style="width:${Math.min(100, (summary.done / Math.max(summary.queued + summary.active + summary.done, 1)) * 100)}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.active} active · ${summary.done} done</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-automation')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function ts() { return Date.now(); }
 function fmtDate(ms) { return new Date(ms).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
@@ -884,8 +1541,10 @@ window.resetAppData = function() {
     if (k && k.startsWith(STORAGE_KEY_PREFIX)) keysToRemove.push(k);
   }
   keysToRemove.forEach(k => window.localStorage.removeItem(k));
-  // Also clear theme preference
+  ReGenXRealtime?.clearOperationalState(keysToRemove);
+  // Also clear theme preferences (both keys for safety)
   window.localStorage.removeItem('regenx-theme');
+  window.localStorage.removeItem('theme');
   // Reload fresh
   window.location.reload();
 }
@@ -901,20 +1560,36 @@ window.fetchWeather = async function(lat, lng) {
 
 // ── STATE ──
 let SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+window.SESSION = SESSION;
 let selectedRole = 'provider';
 let currentView = '';
+window.currentView = currentView;
 let rMap = null; // Rider map instance
 let autoRefreshTimer = null;
 
 // ── THEME ──
 window.toggleTheme = function() {
-  const current = document.documentElement.getAttribute('data-theme');
+  const current = document.documentElement.getAttribute('data-theme') || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
+  if (next === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
   window.localStorage.setItem('regenx-theme', next);
+  const navToggleBtn = document.getElementById('navbar-theme-toggle');
+  if (navToggleBtn) {
+    navToggleBtn.innerText = next === 'dark' ? '☀️' : '🌙';
+  }
 }
-const savedTheme = window.localStorage.getItem('regenx-theme') || 'light';
+const savedTheme = window.localStorage.getItem('regenx-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 document.documentElement.setAttribute('data-theme', savedTheme);
+if (savedTheme === 'dark') {
+  document.documentElement.classList.add('dark');
+} else {
+  document.documentElement.classList.remove('dark');
+}
 
 // ══════════════════════════════════════
 // GOOGLE AUTH
@@ -984,28 +1659,27 @@ function handleGoogleLogin(response) {
     authProvider: "google"
   };
 
-  // SAVE ACCOUNT
- const existing = DB
-  .list('acc:')
-  .map(k => DB.get(k))
-  .find(u => u.email === acc.email);
+  const existing = DB
+    .list('acc:')
+    .map(k => DB.get(k))
+    .find(u => u.email === acc.email);
 
-if(existing){
+  let loginAcc;
 
-  executeLogin(existing);
+  if (existing) {
+    existing.name = payload.name;
+    existing.avatar = payload.picture;
+    DB.set('acc:' + existing.id, existing);
+    loginAcc = existing;
+  } else {
+    DB.set('acc:' + acc.id, acc);
+    loginAcc = acc;
+  }
 
-}else{
-
-  DB.set('acc:' + acc.id, acc);
-
-  executeLogin(acc);
-}
-
-  // LOGIN DIRECTLY
-  executeLogin(acc);
+  executeLogin(loginAcc);
 
   showToast(
-    `✓ Welcome ${acc.name}`
+    `✓ Welcome ${loginAcc.name}`
   );
 }
 
@@ -1255,8 +1929,17 @@ window.fundProject = function() {
 
 function executeLogin(acc) {
   SESSION = acc;
+  window.SESSION = SESSION;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').classList.add('active');
+
+  // Hydrate localStorage from Appwrite cloud on every login.
+  // This ensures data persists across device changes and browser wipes.
+  if (window.CloudSync?.isLive) {
+    window.CloudSync.hydrateFromCloud(acc.id).catch(err =>
+      console.warn('[Login] Cloud hydration failed, running on local data.', err)
+    );
+  }
   
   document.getElementById('tb-name').textContent = acc.name;
   document.getElementById('tb-role').textContent = `${acc.role.toUpperCase()} · ${acc.org}`;
@@ -1293,9 +1976,11 @@ function executeLogin(acc) {
   startTicker();
   const gwWidget = document.getElementById('green-wall-widget');
   if(gwWidget) { gwWidget.style.display = 'flex'; startGreenWall(); }
-  
+  updateNotificationBadge();
+  updateOfflineQueueIndicator();
   buildSidebar();
   autoRefreshTimer = setInterval(() => refreshCurrentView(), 15000);
+  ReGenXRealtime?.setSession(SESSION);
 }
 
 
@@ -1308,6 +1993,9 @@ window.doLogout = function() {
   if (plChartInstance) { plChartInstance.destroy(); plChartInstance = null; }
   if (rMap) { rMap.remove(); rMap = null; }
   SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+  window.SESSION = SESSION;
+  window.currentView = '';
+  ReGenXRealtime?.setSession(null);
   document.getElementById('app-shell').classList.remove('active');
   document.getElementById('login-screen').style.display = 'flex';
   switchAuthTab('login');
@@ -1330,6 +2018,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
@@ -1348,6 +2037,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1365,6 +2055,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1374,6 +2065,7 @@ function buildSidebar() {
 
 window.showView = function(viewId) {
   currentView = viewId;
+  window.currentView = currentView;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const btn = document.getElementById('nav-' + viewId);
   if(btn) btn.classList.add('active');
@@ -1388,7 +2080,8 @@ window.showView = function(viewId) {
     'v-sensor': 'Sensor Reliability', 
     'v-emissions': 'Emissions Tracker', 
     'v-quality': 'Quality Index',
-    'v-esg-hub': 'Sustainability Report Hub'
+    'v-esg-hub': 'Sustainability Report Hub',
+    'v-automation': 'Automation Pipeline'
   };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
@@ -1410,9 +2103,12 @@ window.toggleSidebar = function(force) {
 function getAllOrders() { return DB.list('ord:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 function getOrder(id) { return DB.get('ord:'+id); }
 function saveOrder(o) { 
-  DB.set('ord:'+o.id, o); 
-  if (window.CloudSync && window.CloudSync.isLive) {
-      window.CloudSync.pushDocument('orders', o);
+  // persist locally and publish to realtime and cloud sync when available
+  DB.set('ord:'+o.id, o, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED' });
+  if (window.CloudSync && window.CloudSync.isLive && navigator.onLine) {
+    window.CloudSync.pushDocument('orders', o);
+  } else {
+    queueOfflineAction({ type: 'sync-order', payload: o });
   }
 }
 function getAllLogs() { return DB.list('log:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
@@ -1594,7 +2290,7 @@ function buildOrderCard(o, role) {
     acts = `<button class="btn btn-primary btn-sm" onclick="openPlantConfirm('${o.id}')">Confirm Receipt ✓</button>`;
   }
   if (['provider', 'rider', 'plant'].includes(role) && o.status === 'completed') {
-    acts += `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder('${o.id}')" style="margin-left:auto;">🗑 Delete Record</button>`;
+    acts += `<button class="btn btn-outline-danger btn-sm" onclick="deleteOrder('${o.id}')">🗑 Delete Record</button>`;
   }
 
   acts += `<button class="btn btn-ghost btn-sm" onclick="openIntegrityScan('${o.id}')">🛡 Integrity Scan</button>`;
@@ -1666,6 +2362,10 @@ async function refreshCurrentView(fullRender = false) {
     renderQualityIndex(mc, fullRender);
     return;
   }
+  if (currentView === 'v-automation') {
+    renderAutomationPipeline(mc, fullRender);
+    return;
+  }
   if (currentView === 'v-market') {
     const globalFunded = DB.get('global-fund') || 45200;
     const staked = SESSION.staked || 0;
@@ -1682,7 +2382,7 @@ async function refreshCurrentView(fullRender = false) {
            <div class="between" style="margin-bottom:16px;">
              <div>
                <h4 style="margin-bottom:4px; font-size:18px;">Carbon Credit Staking</h4>
-               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${(DB.get('global-fund') || 45200 / 10).toFixed(1)} tons</strong> of CO2.</p>
+               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${((DB.get('global-fund') || 45200) / 10).toFixed(1)} tons</strong> of CO2.</p>
              </div>
              <div style="text-align:right;">
                <div style="font-size:24px; font-weight:700; color:var(--blue);">12.5% <span style="font-size:14px">APY</span></div>
@@ -2133,6 +2833,56 @@ function renderQualityIndex(mc, fullRender) {
   `;
 }
 
+/**
+ * Render automation pipeline view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderAutomationPipeline(mc, fullRender) {
+  const tasks = seedAutomationPipeline().sort((a, b) => b.ts - a.ts);
+  const summary = getAutomationSummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Automation Pipeline</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Streamline open-source operations with smart task assignment.</div>
+      </div>
+      <button class="btn btn-primary" onclick="autoAssignNext()">⚙️ Auto-Assign Next</button>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.queued}</div><div class="stat-lbl">Queued</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.active}</div><div class="stat-lbl">Active</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.done}</div><div class="stat-lbl">Done</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.queued + summary.active + summary.done}</div><div class="stat-lbl">Total</div></div>
+    </div>
+
+    <div class="glass-card automation-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Task Queue</h4>
+        <span class="badge badge-blue">Automation Ops</span>
+      </div>
+      <div class="automation-list">
+        ${tasks.length ? tasks.map(t => `
+          <div class="automation-item">
+            <div>
+              <div class="automation-title">${t.title}</div>
+              <div class="automation-sub">${t.owner} · ${t.priority.toUpperCase()} · ${fmtDate(t.ts)}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="badge ${t.status === 'done' ? 'badge-green' : t.status === 'active' ? 'badge-amber' : 'badge-blue'}">${t.status.toUpperCase()}</span>
+              ${t.status === 'queued' ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignTask('${t.id}')">Assign</button>` : ''}
+              ${t.status !== 'done' ? `<button class="btn btn-ghost btn-sm" onclick="updateAutomationTask('${t.id}', { status: 'done' })">Done</button>` : ''}
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state">No automation tasks queued.</div>'}
+      </div>
+    </div>
+  `;
+}
+
 // ════════ PROVIDER LOGIC ════════
 async function renderProvider(mc, fullRender) {
   const orders = getAllOrders().filter(o => o.providerId === SESSION.id);
@@ -2160,6 +2910,7 @@ async function renderProvider(mc, fullRender) {
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
       ${renderQualityWidget()}
+      ${renderAutomationWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -2238,12 +2989,15 @@ async function renderProvider(mc, fullRender) {
                 <div style="font-size:12px; color:var(--text-muted);">Get notified instantly when your dispatch is picked up</div>
               </div>
             </div>
-            <button class="btn btn-full" style="background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff; font-weight:700;" onclick="window.requestPushPermission()">
-              🔔 Enable Smart Alerts
+            <button class="btn btn-full" id="btn-smart-alerts"
+              style="${getAlertPreference()
+                ? 'background:transparent; border:2px solid var(--red); color:var(--red);'
+                : 'background:linear-gradient(135deg,#F59E0B,#D97706); color:#fff;'} font-weight:700;"
+              onclick="toggleSmartAlerts()">
+              ${getAlertPreference() ? '🔕 Disable Smart Alerts' : '🔔 Enable Smart Alerts'}
             </button>
           </div>
         </div>
-
       </div>
     `;
     
@@ -2260,15 +3014,27 @@ async function renderProvider(mc, fullRender) {
        id, org: (DB.get('acc:'+id)||{org:'Unknown'}).org, kg: lbMap[id]
     })).sort((a,b)=>b.kg - a.kg).slice(0,3);
     
-    const lbHTML = lbSorted.map((item, i) => `
-      <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
-         <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
-         <div class="badge badge-green">${item.kg} kg</div>
-      </div>
-    `).join('');
-    
     const lbDiv = document.getElementById('pv-leaderboard');
-    if(lbDiv) lbDiv.innerHTML = lbHTML;
+    if(lbDiv) {
+      if (!allCompleted.length) {
+        lbDiv.innerHTML = renderDashboardListState({
+          icon: '🏆',
+          title: 'Leaderboard coming soon',
+          description: 'Regional rankings update as you complete dispatches.',
+          subtext: 'Top contributors by material recovered will appear here.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        });
+      } else {
+        const lbHTML = lbSorted.map((item, i) => `
+          <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
+             <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
+             <div class="badge badge-green">${item.kg} kg</div>
+          </div>
+        `).join('');
+        lbDiv.innerHTML = lbHTML;
+      }
+    }
 
     // Trust Protocol Integration
     const trustScore = TrustProtocol.calculateScore(SESSION, orders);
@@ -2426,15 +3192,19 @@ async function renderProvider(mc, fullRender) {
   if (currentView === 'v-pv-hist-week' || currentView === 'v-pv-hist-month') {
     const isMonth = currentView === 'v-pv-hist-month';
     const limitDays = isMonth ? 30 : 7;
+
     const now = Date.now();
+    const completed = getAllOrders().filter(o => o.providerId === SESSION.id && o.status === 'completed');
     const filteredHistory = completed.filter(o => (now - o.ts) <= (limitDays * 24 * 60 * 60 * 1000));
     
     if(fullRender) mc.innerHTML = `
-      <div class="between" style="margin-bottom:24px;">
-         <h3 class="heading" style="margin-bottom:0;">${isMonth ? 'Monthly' : 'Weekly'} Records</h3>
-         ${filteredHistory.length ? `<button class="btn btn-outline-danger btn-sm" onclick="clearAllHistory('provider')">🗑 Clear All History</button>` : ''}
-      </div>
-      <div id="pv-hist-list"></div>
+      <section class="records-shell" aria-label="${isMonth ? 'Monthly' : 'Weekly'} records">
+        <div class="between records-header">
+           <h3 class="heading" style="margin-bottom:0;">${isMonth ? 'Monthly' : 'Weekly'} Records</h3>
+           ${filteredHistory.length ? `<div class="records-tools"><button class="btn btn-outline-danger btn-sm" onclick="clearAllHistory('provider')">🗑 Clear All History</button></div>` : ''}
+        </div>
+        <div id="pv-hist-list" class="record-stack"></div>
+      </section>
     `;
     document.getElementById('pv-hist-list').innerHTML = filteredHistory.length ? filteredHistory.map(o=>buildOrderCard(o,'provider')).join('') : renderDashboardListState({
       icon: '📦',
@@ -2483,6 +3253,7 @@ window.closeModal = function() {
   const mb = document.getElementById('modal-box');
   if(mb) {
     mb.classList.remove('modal-large');
+    mb.classList.remove('integrity-modal');
     mb.innerHTML = '';
   }
 }
@@ -2557,7 +3328,7 @@ window.clearAllHistory = function(role) {
     if(role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
     return false;
   });
-  orders.forEach(o => window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'ord:' + o.id));
+  orders.forEach(o => ReGenXRealtime?.removeOrderKey(o.id, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED' }));
   showToast("✓ History Cleared");
   refreshCurrentView(true);
 }
@@ -2586,17 +3357,55 @@ window.submitPvRequest = function() {
   saveOrder(o);
   addSlaEntry(o);
   recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+  // Notify local roles and publish an operational realtime event
+  addWorkflowNotification({
+    title: 'Dispatch Created',
+    body: `Your pickup request for ${kg}kg of ${type} has been sent to ${nearest.org}.`,
+    role: 'provider',
+    type: 'dispatch-created',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'New Nearby Pickup Request',
+    body: `${SESSION.org} requested ${kg}kg of ${type}.`,
+    role: 'rider',
+    type: 'dispatch-created',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Incoming Waste Shipment Alert',
+    body: `${kg}kg from ${SESSION.org} is routed to your plant.`,
+    role: 'plant',
+    type: 'dispatch-created',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
+
+  publishOperationalEvent('DISPATCH_CREATED', [], {
+    toast: `New dispatch created for ${nearest.org}.`,
+    statusLabel: 'Dispatch live'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   showToast(`✓ Dispatched! Routed to ${nearest.org} (${minDist.toFixed(1)}km away).`);
   showView('v-pv-dash');
 }
 
 window.cancelOrder = function(id) {
   const o = getOrder(id); if(!o) return;
-  o.status = 'rejected'; saveOrder(o); showToast("Cancelled."); refreshCurrentView();
+  o.status = 'rejected'; saveOrder(o);
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Dispatch #${o.id.slice(-6).toUpperCase()} was cancelled.`,
+    statusLabel: 'Cancelled'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
+  showToast("Cancelled."); refreshCurrentView();
 }
 
 window.deleteOrder = function(id) {
-  window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'ord:' + id);
+  ReGenXRealtime?.removeOrderKey(id, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED', meta: { statusLabel: 'Order removed' } });
   showToast("✓ Record Deleted");
   refreshCurrentView(true);
 }
@@ -2728,6 +3537,7 @@ async function renderRider(mc, fullRender) {
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
       ${renderQualityWidget()}
+      ${renderAutomationWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -3000,6 +3810,38 @@ window.riderAccept = function(id) {
   saveOrder(o);
   updateSlaEntry(o.id, { status: 'assigned' });
   recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Pickup Accepted',
+    body: `${SESSION.name} accepted the pickup for ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'pickup-assigned',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Job Assigned',
+    body: `You accepted pickup for ${o.providerOrg} (${o.kg}kg).`,
+    role: 'rider',
+    type: 'pickup-assigned',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Incoming Shipment En Route',
+    body: `Rider ${SESSION.name} is heading to collect the waste.`,
+    role: 'plant',
+    type: 'pickup-assigned',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
+
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Rider ${SESSION.name} accepted dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Route assigned'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   showToast("✓ Route Added to Batch!");
   showView('v-rd-dash');
 }
@@ -3008,6 +3850,33 @@ window.riderUpdate = function(id, st) {
   o.status = st; saveOrder(o);
   updateSlaEntry(o.id, { status: st });
   recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  if (st === 'en_route') {
+    addWorkflowNotification({
+      title: 'Rider En Route',
+      body: `${SESSION.name} is on the way to ${o.providerOrg}.`,
+      role: 'provider',
+      type: 'pickup-progress',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
+  if (st === 'at_plant') {
+    addWorkflowNotification({
+      title: 'Arrival at Plant',
+      body: `${SESSION.name} has arrived at ${o.plantName} with the load.`,
+      role: 'plant',
+      type: 'pickup-progress',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
+
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Dispatch #${o.id.slice(-6).toUpperCase()} moved to ${st.replace('_', ' ')}.`,
+    statusLabel: 'Route moving'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   refreshCurrentView();
 }
 window.openPickupConfirm = function(id) {
@@ -3028,6 +3897,29 @@ window.confirmPickup = function(id) {
   saveOrder(o);
   updateSlaEntry(o.id, { pickupTs: ts(), status: 'picked_up' });
   recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Pickup Confirmed',
+    body: `${SESSION.name} collected ${kg}kg from ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'pickup-confirmed',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Load Sent to Plant',
+    body: `The load is now verified and on its way to ${o.plantName}.`,
+    role: 'plant',
+    type: 'pickup-confirmed',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
+
+  publishOperationalEvent('PICKUP_CONFIRMED', [], {
+    toast: `Pickup confirmed for dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Pickup live'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   closeModal();
   refreshCurrentView();
 }
@@ -3071,6 +3963,8 @@ window.openIntegrityScan = function(orderId) {
     </div>
   `;
   modal.classList.add('open');
+  box.classList.add('integrity-modal');
+  box.classList.add('glass-card');
 
   setTimeout(() => {
     const events = getOrderLedgerEvents(orderId);
@@ -3078,26 +3972,36 @@ window.openIntegrityScan = function(orderId) {
     const statusClass = integrity.score >= 90 ? 'badge-green' : integrity.score >= 75 ? 'badge-blue' : integrity.score >= 60 ? 'badge-amber' : 'badge-red';
     const statusLabel = integrity.score >= 90 ? 'High Integrity' : integrity.score >= 75 ? 'Verified' : integrity.score >= 60 ? 'Watch' : 'Risk';
 
-    const timeline = events.length ? events.map((e, idx) => {
-      const meta = getIntegrityEventMeta(e.event);
-      return `
-        <div class="trust-tl-item">
-          <div class="trust-tl-icon">${meta.icon}</div>
-          <div>
-            <div class="trust-tl-title">${meta.label}</div>
-            <div class="trust-tl-sub">${fmtDate(e.ts)} · ${e.actorRole.toUpperCase()}</div>
+    let timeline = '';
+    if (events.length) {
+      timeline = events.map((e, idx) => {
+        const meta = getIntegrityEventMeta(e.event);
+        return `
+          <div class="trust-tl-item">
+            <div class="trust-tl-icon">${meta.icon}</div>
+            <div>
+              <div class="trust-tl-title">${meta.label}</div>
+              <div class="trust-tl-sub">${fmtDate(e.ts)} · ${e.actorRole.toUpperCase()}</div>
+            </div>
+            ${idx < events.length - 1 ? '<div class="trust-tl-line"></div>' : ''}
           </div>
-          ${idx < events.length - 1 ? '<div class="trust-tl-line"></div>' : ''}
+        `;
+      }).join('');
+    } else {
+      timeline = `
+        <div class="dashboard-state dashboard-state-empty">
+          <div class="dashboard-state-head">
+            <div class="dashboard-state-icon">🧾</div>
+            <span class="status-badge status-badge-inactive">IDLE</span>
+          </div>
+          <div style="flex:1;">
+            <div class="dashboard-state-title">No ledger events yet</div>
+            <div class="dashboard-state-desc">This dispatch has no recorded custody events.</div>
+            <div class="dashboard-state-sub">Once the order is scanned, the timeline will populate here.</div>
+          </div>
         </div>
       `;
-    }).join('') : renderDashboardListState({
-      icon: '🧾',
-      title: 'No ledger events yet',
-      description: 'This dispatch has no recorded custody events.',
-      subtext: 'Once the order is scanned, the timeline will populate here.',
-      statusLabel: 'Idle',
-      tone: 'inactive'
-    });
+    }
 
     box.innerHTML = `
       <h3 class="modal-title">Integrity Scan</h3>
@@ -3105,7 +4009,7 @@ window.openIntegrityScan = function(orderId) {
       <div class="integrity-summary">
         <div>
           <div style="font-size:12px; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Trust Score</div>
-          <div style="font-size:24px; font-weight:800;">${integrity.score}/100</div>
+          <div class="trust-score-large">${integrity.score}/100</div>
         </div>
         <div style="text-align:right;">
           <div class="badge ${statusClass}">${statusLabel}</div>
@@ -3119,7 +4023,6 @@ window.openIntegrityScan = function(orderId) {
     `;
   }, 900);
 }
-window.closeModal = function() { document.getElementById('modal').classList.remove('open'); }
 
 window.openSettings = function() {
   const html = `
@@ -3147,7 +4050,12 @@ window.openSettings = function() {
 
 window.deleteAccount = function() {
   if(confirm("Are you sure you want to permanently delete your account? This action cannot be undone.")) {
-    window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'acc:' + SESSION.id);
+    ReGenXRealtime?.syncStorageMutation({
+      updates: [{ key: STORAGE_KEY_PREFIX + 'acc:' + SESSION.id, action: 'remove' }],
+      rooms: ['network_room', 'admin_room'],
+      eventType: 'KPI_UPDATED',
+      meta: { statusLabel: 'Account deleted' }
+    });
     closeModal();
     doLogout();
     refreshLoginDropdown();
@@ -3218,6 +4126,7 @@ async function renderPlant(mc, fullRender) {
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
       ${renderQualityWidget()}
+      ${renderAutomationWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -3376,7 +4285,7 @@ async function renderPlant(mc, fullRender) {
   }
 
   if (currentView === 'v-pl-in') {
-    if(fullRender) mc.innerHTML = `<h3 class="heading" style="margin-bottom:24px;">Incoming Flow</h3><div id="pl-in-list"></div>`;
+    if(fullRender) mc.innerHTML = `<div class="incoming-shell"><h3 class="heading">Incoming Flow</h3><div id="pl-in-list"></div></div>`;
     document.getElementById('pl-in-list').innerHTML = incoming.length ? incoming.map(o=>buildOrderCard(o,'plant')).join('') : renderDashboardListState({
       icon: '🚛',
       title: 'No incoming flow',
@@ -3466,16 +4375,54 @@ window.confirmPlantReceipt = function(id) {
      });
   }
 
+  const confirmed = confirm(
+  "Are you sure you want to mark this dispatch as completed?"
+  );
+
+  if (!confirmed) return;
+
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
   recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Plant Confirmation Received',
+    body: `${o.plantName} confirmed the delivery for ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'delivery-confirmed',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  if (o.riderName) {
+    addWorkflowNotification({
+      title: 'Delivery Confirmed',
+      body: `${o.plantName} confirmed the delivery of your load.`,
+      role: 'rider',
+      type: 'delivery-confirmed',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
+  addWorkflowNotification({
+    title: 'Token Rewards Credited',
+    body: `${earnedTokens} $RGX minted for ${o.providerOrg} after successful intake.`,
+    role: 'provider',
+    type: 'token-credited',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
   addEsgAlertsForOrder(o);
+
   const kgProcessed = parseFloat(o.actualKg || o.kg || 0);
+
   if (kgProcessed > 0) {
     const energyKwh = parseFloat((kgProcessed * 0.35).toFixed(2));
     const efficiencyPct = Math.min(100, Math.round((energyKwh / (kgProcessed * 0.5)) * 100));
     const score = Math.max(10, Math.round((efficiencyPct * 0.7) + (o.segScore ? (o.segScore * 0.3) : 0)));
+
     addEnergyEntry({
       id: 'eng-' + uid(),
       orderId: o.id,
@@ -3487,6 +4434,11 @@ window.confirmPlantReceipt = function(id) {
       ts: ts()
     });
   }
+  
+  publishOperationalEvent('DELIVERY_COMPLETED', [], {
+    toast: `Plant confirmed receipt for dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Delivery complete'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   const route = getOrderRouteEndpoints(o);
   if (route.start && route.end) {
     const distanceKm = parseFloat(distanceKm(route.start.lat, route.start.lng, route.end.lat, route.end.lng).toFixed(1));
@@ -3528,6 +4480,14 @@ window.savePlantLog = function() {
   if(!bio && !comp) return window.showToast("⚠ Enter output values.");
   
   DB.set('log:'+uid(), { id: uid(), ts: ts(), plantId: SESSION.id, bio, comp, temp: document.getElementById('out-temp').value });
+  addWorkflowNotification({
+    title: 'Plant Output Logged',
+    body: `Your plant output record was saved successfully.`,
+    role: 'plant',
+    type: 'plant-log',
+    priority: 'normal',
+    url: '/'
+  });
   window.showToast("✓ Output logged! Automated msg sent.");
   showView('v-pl-dash');
 }
@@ -3879,6 +4839,11 @@ window.iotDispatchFromBin = function(id) {
   showToast('⚠ Fill in quantity and submit to dispatch a collection for this bin.');
 };
 
+window.refreshCurrentView = refreshCurrentView;
+window.refreshLoginDropdown = refreshLoginDropdown;
+window.startGreenWall = startGreenWall;
+window.syncIoTAlertBadge = syncIoTAlertBadge;
+
 // ── INIT ──
 (function seedDB() {
   if (!DB.get('iot-bins')) {
@@ -3897,6 +4862,7 @@ document.getElementById('login-screen').style.display = 'flex';
 switchAuthTab('login');
 
 // ── Initialize Appwrite Cloud Sync Engine ──
+setTimeout(() => { ReGenXRealtime?.init(); ReGenXRealtime?.requestSnapshot?.(); }, 1000);
 setTimeout(() => { if (window.CloudSync) window.CloudSync.init(); }, 1000);
 
 // Expose module-scoped functions to global scope for inline HTML handlers
@@ -3910,6 +4876,7 @@ window.resetAppData = resetAppData;
 window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
+window.toggleSmartAlerts = toggleSmartAlerts;
 window.saveOrder = saveOrder;
 window.refreshCurrentView = refreshCurrentView;
 
@@ -3924,6 +4891,7 @@ window.getCurrentView = () => currentView;
  * @returns {Object} The session object.
  */
 window.getSESSION = () => SESSION;
+
 
 /**
  * @function animateAuthEntry
@@ -3957,3 +4925,56 @@ function detectDeviceClass() {
 
 detectDeviceClass();
 window.detectDeviceClass = detectDeviceClass;
+// --- Copy to Clipboard Feature (Issue #78) ---
+
+function copyTagToClipboard(tag) {
+  navigator.clipboard.writeText(tag).then(() => {
+    showToast(`Copied: "${tag}"`);
+  });
+}
+
+function copyAllTags(tags) {
+  const allTags = tags.join(', ');
+  navigator.clipboard.writeText(allTags).then(() => {
+    showToast('All tags copied to clipboard!');
+  });
+}
+
+function exportTagsAsTxt(tags) {
+  const content = tags.join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'regenx-tags.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ==========================================
+// DARK MODE TOGGLE LOGIC (ISSUE #79)
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const navToggleBtn = document.getElementById('navbar-theme-toggle');
+    const rootHtml = document.documentElement;
+
+    const savedTheme = localStorage.getItem('regenx-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+
+    if (isDark) {
+        rootHtml.classList.add('dark');
+        rootHtml.setAttribute('data-theme', 'dark');
+        if (navToggleBtn) navToggleBtn.innerText = '☀️';
+    } else {
+        rootHtml.classList.remove('dark');
+        rootHtml.setAttribute('data-theme', 'light');
+        if (navToggleBtn) navToggleBtn.innerText = '🌙';
+    }
+
+    if (navToggleBtn) {
+        navToggleBtn.addEventListener('click', () => {
+            window.toggleTheme();
+        });
+    }
+});
