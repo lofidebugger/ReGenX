@@ -76,11 +76,23 @@ async function cacheDynamicResponse(request, response) {
 
 /**
  * Returns the offline fallback page for navigation requests.
+ * Falls back to a simple HTML response if the cached page is unavailable.
  *
- * @returns {Promise<Response | undefined>}
+ * @returns {Promise<Response>}
  */
 async function getOfflineFallback() {
-  return caches.match(OFFLINE_URL);
+  const cached = await caches.match(OFFLINE_URL);
+
+  if (cached) {
+    return cached;
+  }
+
+  return new Response(
+    '<!doctype html><html><head><meta charset="utf-8"><title>Offline</title></head><body style="font-family:system-ui, sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0D9488;color:#fff;text-align:center;"><div><h1>Offline</h1><p>You are currently offline. Please reconnect to continue.</p></div></body></html>',
+    {
+      headers: { 'Content-Type': 'text/html' }
+    }
+  );
 }
 
 function shouldIgnoreSearch(request, url) {
