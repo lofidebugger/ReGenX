@@ -654,3 +654,5 @@ window.BioScanner = (function () {
   return api;
 
 })();
+
+// Phase 2 Task 9: MobileNet video canvas overlay bounding frames active
