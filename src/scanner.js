@@ -1,6 +1,9 @@
-// ══════════════════════════════════════
-// ReGenX BioScanner v2 — AI Waste Vision
-// ══════════════════════════════════════
+/**
+ * @fileoverview ReGenX BioScanner Engine
+ * Real-time MobileNet AI-powered bio-waste contamination detection and scanning.
+ * Phase 2 Upgrade: Optimized MobileNet inference scoring and visual boundary indicator overlays.
+ * @author GSSoC Contributor
+ */
 
 window.BioScanner = (function () {
 
