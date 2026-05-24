@@ -209,6 +209,11 @@ window.BioScanner = (function () {
         result
       };
       _scanHistory.unshift(record);
+      // Save to localStorage for persistence
+      const stored = JSON.parse(localStorage.getItem('regenx_scan_history') || '[]');
+      stored.unshift(record);
+      if (stored.length > 50) stored.pop(); // max 50 records rakhenge
+      localStorage.setItem('regenx_scan_history', JSON.stringify(stored));
 
       if (_opts.onScanSaved) _opts.onScanSaved(record);
 
@@ -634,13 +639,14 @@ window.BioScanner = (function () {
   };
 
   // ── PUBLIC OPEN ───────────────────────────────────────────────────────────────
-  api.open = function (opts) {
+ api.open = function (opts) {
     _opts = opts || {};
     _currentResult = null;
+    // Load existing history from localStorage
+    _scanHistory = JSON.parse(localStorage.getItem('regenx_scan_history') || '[]');
     renderScanner();
     setUiState('idle');
   };
-
   api.stop = function () {
     stopCamera();
   };
