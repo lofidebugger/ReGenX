@@ -55,99 +55,100 @@ Built the $RGX token economy dashboard interface. Added the ability for provider
 ---
 
 ## PR 6: Integrate ESG Auditing & Reporting Module
-**Branch:** `feat/issue-106-branch-1-esg-charts`
+**Branch:** `feat/issue-274-branch-1-esg-charts`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Refactored the ESG calculation engine inside `src/esg-reporter.js`. This PR implements standard carbon emission reduction algorithms, generates high-fidelity ESG impact reports, and adds dynamic Excel/PDF export capabilities for municipal and corporate eco-compliance.
 
 ---
 
 ## PR 7: Implement Cryptographic Trust Ledger Verification
-**Branch:** `feat/issue-106-branch-2-trust-verification`
+**Branch:** `feat/issue-274-branch-2-trust-verification`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Introduced decentralized ledger verification in `src/trust.js`. This PR adds local SHA-256 dispatch hashing, zero-knowledge proofs (ZKP) simulator for waste volume claims, and a tamper-detection dashboard widget to guarantee data integrity across hotel dispatches.
 
 ---
 
 ## PR 8: Add Multi-Stop Route Optimization for Riders
-**Branch:** `feat/issue-106-branch-3-route-optimization`
+**Branch:** `feat/issue-274-branch-3-route-optimization`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Upgraded the pathfinding logic in `src/route-optimizer.js`. Integrated vehicle volume/weight capacity constraints and implemented a multi-stop heuristic routing algorithm. The Leaflet.js interface now plots color-coded multi-stop routes to maximize fuel efficiency.
 
 ---
 
 ## PR 9: Setup Dynamic Storage & Cloud Sync Protocol
-**Branch:** `feat/issue-106-branch-4-cloud-sync`
+**Branch:** `feat/issue-274-branch-4-cloud-sync`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Engineered a resilient local-first architecture in `src/cloud-sync.js`. Added an IndexedDB fallback storage queue that records all offline scanned dispatches and automatically resolves data synchronicity conflicts upon internet reconnection.
 
 ---
 
 ## PR 10: Implement AI Next-Day Waste Volume Prediction Engine
-**Branch:** `feat/issue-106-branch-5-ai-volume-prediction`
+**Branch:** `feat/issue-274-branch-5-ai-volume-prediction`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Integrated an intelligent moving average forecasting module in `src/intelligence.js`. The analytics dashboard now calculates dynamic daily averages based on LocalStorage historical data to visually predict next-day bio-waste volumes via Chart.js.
 
 ---
 
 ## PR 11: Build Glassmorphic Municipal Compliance Audit Portal
-**Branch:** `feat/issue-106-branch-6-audit-trail`
+**Branch:** `feat/issue-274-branch-6-audit-trail`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Designed and built the municipal compliance dashboard in `src/audit-portal.js`. This features premium glassmorphism layouts, full public audit logs, interactive graphs showing regional waste diversion statistics, and high-impact visual performance indicators.
 
 ---
 
 ## PR 12: Integrate Composting Bio-Chemical Yield Optimizer
-**Branch:** `feat/issue-106-branch-7-yield-forecast`
+**Branch:** `feat/issue-274-branch-7-yield-forecast`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Developed a biochemical yield calculator in `src/yield-optimizer.js` for Processing Plant operators. This estimates organic compost output, methane production savings, and nutrient richness metrics based on bio-waste mass and contamination scores.
 
 ---
 
 ## PR 13: Implement WebSocket Realtime Reconnection Protocol
-**Branch:** `feat/issue-106-branch-8-realtime-socket`
+**Branch:** `feat/issue-274-branch-8-realtime-socket`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Stabilized multi-tab state sync inside `src/realtime-sync.js`. This adds a custom WebSocket heartbeat ping mechanism, automatic connection status badges, and exponential backoff retry algorithms to keep all dashboard views fully synchronized.
 
 ---
 
 ## PR 14: Upgrade AI Scanner with Visual Bounding-Boxes
-**Branch:** `feat/issue-106-branch-9-pwa-offline`
+**Branch:** `feat/issue-274-branch-9-pwa-offline`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Enhanced the MobileNet AI scanning flow in `src/scanner.js` and `src/vision-scanner.js`. ReGenX now renders real-time visual canvas overlays (bounding boxes) during video capture to draw region-of-interest indicators and filter low-light frames.
 
 ---
 
 ## PR 15: Enhance Glassmorphism Design System & CSS Micro-animations
-**Branch:** `feat/issue-106-branch-10-glassmorphism-ux`
+**Branch:** `feat/issue-274-branch-10-glassmorphism-ux`
 
 ### 📝 PR Description
-Closes #106
+Closes #274
 
 Overhauled styling in `src/styles.css` and `index.html`. Refined linear gradients, elevated the glassmorphic background-blur attributes, and added CSS keyframe micro-animations (pulsing stats, smooth hover scales) for a state-of-the-art interactive experience.
+
