@@ -56,6 +56,7 @@ export const AccessibilityManager = {
 
     /**
      * Injects the accessibility trigger button and control panel markup into the document body.
+     * @returns {void}
      */
     injectUI: () => {
         // Accessibility Trigger Button
