@@ -58,7 +58,8 @@ export const ESGReporter = {
 
     /**
      * Persists the public audit registry in localStorage.
-     * @param {Array<Object>} records - Registry records.
+     * @param {Array<Object>} records - Registry records to store.
+     * @returns {void}
      */
     saveAuditRegistry: (records) => {
         try {
