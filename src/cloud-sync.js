@@ -434,6 +434,7 @@ export const CloudSync = {
      * Latest value for any given key wins (deduplication).
      * @param {string} key - Data key (e.g. 'ord:abc123').
      * @param {Object} data - Data payload.
+     * @returns {void}
      */
     queueOfflineWrite: (key, data) => {
         try {
