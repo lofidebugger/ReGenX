@@ -1,3 +1,8 @@
+/**
+ * @fileoverview ReGenX Multi-lingual Translation and Internationalization System
+ * Provides instant dynamic translations for English, Hindi, Telugu, and German.
+ * Integrates a MutationObserver to automatically translate dynamic UI changes.
+ */
 
 window.currentLanguage = localStorage.getItem('regenx-lang') || 'en';
 
@@ -158,22 +163,23 @@ window.i18nDictionary = {
  */
 window.translateText = function(text, lang) {
   if (!text) return "";
+  const activeLang = lang || window.currentLanguage || 'en';
   const cleaned = text.trim();
   if (cleaned.length === 0) return text;
 
   const dict = window.i18nDictionary;
-  if (!dict || lang === 'en') return text;
+  if (!dict || activeLang === 'en') return text;
 
   // 1. Exact Match
-  if (dict[cleaned] && dict[cleaned][lang]) {
-    return dict[cleaned][lang];
+  if (dict[cleaned] && dict[cleaned][activeLang]) {
+    return dict[cleaned][activeLang];
   }
 
   // 2. Case-insensitive Match
   const lowerText = cleaned.toLowerCase();
   for (const key in dict) {
-    if (key.toLowerCase() === lowerText && dict[key][lang]) {
-      return dict[key][lang];
+    if (key.toLowerCase() === lowerText && dict[key][activeLang]) {
+      return dict[key][activeLang];
     }
   }
 
@@ -200,8 +206,8 @@ window.translateText = function(text, lang) {
 
   for (const key in phraseReplacements) {
     const regex = new RegExp(`\\b${key}\\b`, 'gi');
-    if (regex.test(translated) && phraseReplacements[key][lang]) {
-      translated = translated.replace(regex, phraseReplacements[key][lang]);
+    if (regex.test(translated) && phraseReplacements[key][activeLang]) {
+      translated = translated.replace(regex, phraseReplacements[key][activeLang]);
     }
   }
 
@@ -210,7 +216,8 @@ window.translateText = function(text, lang) {
 
 /**
  * Traverses the DOM recursively to translate all visible labels and text nodes.
- * @param {Node} root - The root node to start traversal.
+ * @param {Node} [root=document.body] - The root node to start traversal.
+ * @returns {void}
  */
 window.translateDOM = function(root = document.body) {
   const lang = window.currentLanguage || 'en';
@@ -299,8 +306,9 @@ window.startI18nObserver = function() {
 
 // LANGUAGE CONTROLLER
 window.setLanguage = function(lang) {
-  window.currentLanguage = lang;
-  localStorage.setItem('regenx-lang', lang);
+  const safeLang = (lang || 'en').toLowerCase();
+  window.currentLanguage = safeLang;
+  localStorage.setItem('regenx-lang', safeLang);
   
   // Instant dynamic translation
   if (lang !== 'en') {

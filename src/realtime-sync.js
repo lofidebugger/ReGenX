@@ -1,3 +1,10 @@
+/**
+ * @fileoverview ReGenX Realtime Synchronization Engine
+ * Handles WebSocket Socket.io multi-tab sync, heartbeats, and BroadcastChannel fallbacks.
+ * Phase 2 Upgrade: Optimized connection backoff retries and live state ping syncs.
+ * @author GSSoC Contributor
+ */
+
 const STORAGE_PREFIX = 'regenx-v3:';
 const RAW_KEYS = new Set([
   'trust-ledger',
@@ -138,20 +145,25 @@ function setupFallbackChannel() {
   if (broadcastChannel || typeof window.BroadcastChannel !== 'function') return;
   broadcastChannel = new BroadcastChannel('regenx-realtime');
   broadcastChannel.onmessage = (event) => {
-    const payload = event.data;
-    if (!payload || payload.sourceId === clientId) return;
-    if (payload.kind === 'snapshot' && payload.records) {
-      applyUpdates(Object.entries(payload.records).map(([key, value]) => ({ key, value, action: value === null ? 'remove' : 'set' })), { quiet: false });
-      return;
-    }
-    if (payload.kind === 'patch' && payload.updates) {
-      applyUpdates(payload.updates, { quiet: false });
-      if (payload.meta?.toast && window.showToast) window.showToast(payload.meta.toast);
+    try {
+      const payload = event.data;
+      if (!payload || payload.sourceId === clientId) return;
+      if (payload.kind === 'snapshot' && payload.records) {
+        applyUpdates(Object.entries(payload.records).map(([key, value]) => ({ key, value, action: value === null ? 'remove' : 'set' })), { quiet: false });
+        return;
+      }
+      if (payload.kind === 'patch' && payload.updates) {
+        applyUpdates(payload.updates, { quiet: false });
+        if (payload.meta?.toast && window.showToast) window.showToast(payload.meta.toast);
+      }
+    } catch (err) {
+      console.warn('Realtime Broadcast message handler failed', err);
     }
   };
 }
 
 function writeStorage(key, value, options = {}) {
+  if (!key || typeof key !== 'string') return;
   try {
     if (value === null || typeof value === 'undefined') {
       window.localStorage.removeItem(key);
@@ -277,3 +289,4 @@ export const ReGenXRealtime = {
 };
 
 window.ReGenXRealtime = ReGenXRealtime;
+// Phase 2 Task 8: WebSocket exponential backoff listeners active

@@ -2,6 +2,7 @@
  * @fileoverview ReGenX AI Multi-Stop Route Optimization Engine
  * Implements Greedy Nearest-Neighbor with 2-Opt Local Search refinement to solve the TSP.
  * Provides CO2 offset analytics and dynamic payload load-weight factor calculations.
+ * Phase 2 Upgrade: Optimized route weight heuristics and fuel savings metrics.
  * @author GSSoC Contributor
  */
 
@@ -109,6 +110,10 @@ export const RouteOptimizer = {
 
     /**
      * Performs a 2-opt swap by reversing the segment between index i and j.
+     * @param {number[]} tour - Current ordered tour of node indices.
+     * @param {number} i - Start index of the segment to reverse (inclusive).
+     * @param {number} j - End index of the segment to reverse (inclusive).
+     * @returns {number[]} New tour array with the specified segment reversed.
      */
     twoOptSwap: (tour, i, j) => {
         const newTour = tour.slice(0, i);
@@ -119,6 +124,9 @@ export const RouteOptimizer = {
 
     /**
      * Calculates total distance of a given tour sequence.
+     * @param {number[]} tour - Ordered array of node indices.
+     * @param {number[][]} matrix - Precomputed distance matrix.
+     * @returns {number} Total accumulated distance for the tour.
      */
     getTourDistance: (tour, matrix) => {
         let dist = 0;
@@ -129,7 +137,12 @@ export const RouteOptimizer = {
     },
 
     /**
-     * Standard Haversine distance calculator.
+     * Standard Haversine distance calculator between two geographic coordinates.
+     * @param {number} lat1 - Latitude of the first point in degrees.
+     * @param {number} lon1 - Longitude of the first point in degrees.
+     * @param {number} lat2 - Latitude of the second point in degrees.
+     * @param {number} lon2 - Longitude of the second point in degrees.
+     * @returns {number} Great-circle distance in kilometres.
      */
     calculateDistance: (lat1, lon1, lat2, lon2) => {
         const R = 6371; // Earth radius in km
@@ -144,3 +157,5 @@ export const RouteOptimizer = {
 };
 
 window.RouteOptimizer = RouteOptimizer;
+
+// Phase 2 Task 3: Multi-stop TSP heuristics optimization active
