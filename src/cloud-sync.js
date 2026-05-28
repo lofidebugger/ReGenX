@@ -436,8 +436,13 @@ export const CloudSync = {
      */
     queueOfflineWrite: (key, data) => {
         try {
-            const queue = JSON.parse(localStorage.getItem('regenx-offline-queue') || '[]');
+            let queue = JSON.parse(localStorage.getItem('regenx-offline-queue') || '[]');
+            if (!Array.isArray(queue)) queue = [];
             const filtered = queue.filter(item => item.key !== key);
+            // Cap at 100 items to avoid LocalStorage quota exhaustion
+            if (filtered.length >= 100) {
+                filtered.shift();
+            }
             filtered.push({ key, data, ts: Date.now() });
             localStorage.setItem('regenx-offline-queue', JSON.stringify(filtered));
             console.log(`[CloudSync] Queued offline write for key: ${key}`);
