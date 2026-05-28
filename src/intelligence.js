@@ -31,7 +31,7 @@ export const Intelligence = {
             return { expectedKg: 0, confidence: 'Low', trend: 'Neutral' };
         }
 
-        const weights = history.map(o => o.actualKg || o.kg || 0);
+        const weights = history.map(o => o && (o.actualKg || o.kg) || 0);
         const avg = weights.reduce((a, b) => a + b, 0) / weights.length;
         
         // Simple weighted moving average simulation
