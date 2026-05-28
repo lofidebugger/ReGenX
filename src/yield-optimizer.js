@@ -21,11 +21,12 @@ export const YieldOptimizer = {
         }
 
         // Calculate average segregation score (quality of organic matter)
-        const totalScore = recentIntakes.reduce((sum, o) => sum + (parseInt(o.segScore) || 50), 0);
+        const totalScore = recentIntakes.reduce((sum, o) => sum + (o && (parseInt(o.segScore) || 50) || 50), 0);
         const avgScore = totalScore / recentIntakes.length;
 
-        // Calculate total mass
-        const totalKg = recentIntakes.reduce((sum, o) => sum + (parseFloat(o.actualKg || o.kg) || 0), 0);
+        // Calculate total mass (ensure non-negativity)
+        const rawMass = recentIntakes.reduce((sum, o) => sum + (o && (parseFloat(o.actualKg || o.kg) || 0) || 0), 0);
+        const totalKg = Math.max(0, rawMass);
 
         // Theoretical Model: 
         // High quality (Score > 80) yields ~0.8 m3/kg
