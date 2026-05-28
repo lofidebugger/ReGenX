@@ -36,7 +36,17 @@ export const AccessibilityManager = {
             const saved = window.localStorage.getItem('regenx-accessibility');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                AccessibilityManager.state = { ...AccessibilityManager.state, ...parsed };
+                const validated = {};
+                if (parsed && typeof parsed === 'object') {
+                    if (typeof parsed.ttsEnabled === 'boolean') validated.ttsEnabled = parsed.ttsEnabled;
+                    if (typeof parsed.highContrast === 'boolean') validated.highContrast = parsed.highContrast;
+                    if (typeof parsed.dyslexicFont === 'boolean') validated.dyslexicFont = parsed.dyslexicFont;
+                    if (typeof parsed.reduceMotion === 'boolean') validated.reduceMotion = parsed.reduceMotion;
+                    if (typeof parsed.fontScale === 'number' && !isNaN(parsed.fontScale)) {
+                        validated.fontScale = Math.max(0.8, Math.min(1.5, parsed.fontScale));
+                    }
+                }
+                AccessibilityManager.state = { ...AccessibilityManager.state, ...validated };
             }
         } catch (e) {
             console.error('Failed to load accessibility settings:', e);
@@ -56,6 +66,7 @@ export const AccessibilityManager = {
 
     /**
      * Injects the accessibility trigger button and control panel markup into the document body.
+     * @returns {void}
      */
     injectUI: () => {
         // Accessibility Trigger Button
@@ -257,23 +268,25 @@ export const AccessibilityManager = {
      * Applies the font scaling factor as a CSS variable on html.
      */
     applyFontScale: () => {
-        document.documentElement.style.setProperty('--font-scale', AccessibilityManager.state.fontScale);
+        const safeScale = Math.max(0.8, Math.min(1.5, AccessibilityManager.state.fontScale || 1.0));
+        document.documentElement.style.setProperty('--font-scale', safeScale);
         const indicator = document.getElementById('acc-zoom-val');
         if (indicator) {
-            indicator.textContent = Math.round(AccessibilityManager.state.fontScale * 100) + '%';
+            indicator.textContent = Math.round(safeScale * 100) + '%';
         }
     },
 
     /**
      * Speaks the given text using the speech synthesis API.
      * @param {string} text - The text to read out.
+     * @param {number} [rate=1.0] - The speech rate scaling factor.
      */
-    speak: (text) => {
+    speak: (text, rate = 1.0) => {
         if (!window.speechSynthesis) return;
         AccessibilityManager.stopSpeaking();
 
         AccessibilityManager.utterance = new SpeechSynthesisUtterance(text);
-        AccessibilityManager.utterance.rate = 1.0;
+        AccessibilityManager.utterance.rate = rate;
         window.speechSynthesis.speak(AccessibilityManager.utterance);
     },
 
