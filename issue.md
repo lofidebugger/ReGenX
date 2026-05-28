@@ -1,7 +1,7 @@
 ---
 name: "🚀 Critical & Exceptional Issue"
 about: "Use this template for high-impact features or critical bug fixes to earn maximum GSSoC points."
-title: "[CRITICAL] Smart Waste Logistics Phase 2: Decarbonization, Yield Optimization & Trust Architecture Upgrades"
+title: "[CRITICAL] Smart Waste Logistics Phase 2: Decarbonization, Yield Optimization & Trust Architecture Upgrades (Enhancement Pack B)"
 labels: ["level:critical", "quality:exceptional", "type:feature"]
 assignees: []
 
@@ -29,45 +29,44 @@ Upgrade the core features in `src/` to support decentralized waste auditing, rea
 
 This epic is split into the following 10 functional modules, each mapped to its own branch and PR:
 
-- [ ] **Task 1: ESG Auditing & Reporting Module (`src/esg-reporter.js`)**
-  - *Branch:* `feat/issue-106-branch-1-esg-charts`
-  - *Goal:* Refactor ESG calculation algorithms and construct carbon credit certification export schemas.
-- [ ] **Task 2: Decentralized Trust Verification System (`src/trust.js`)**
-  - *Branch:* `feat/issue-106-branch-2-trust-verification`
-  - *Goal:* Introduce SHA-256 dispatch ledger hashes and cryptographic tamper-proof validation checks.
-- [ ] **Task 3: Multi-Stop Routing Optimization (`src/route-optimizer.js`)**
-  - *Branch:* `feat/issue-106-branch-3-route-optimization`
-  - *Goal:* Integrate vehicle volume capacity constraints and route weight heuristic calculations.
-- [ ] **Task 4: Dynamic Storage Cloud Sync Protocol (`src/cloud-sync.js`)**
-  - *Branch:* `feat/issue-106-branch-4-cloud-sync`
-  - *Goal:* Develop local-first fallback queues and offline sync reconciliation rules.
-- [ ] **Task 5: Next-Day Waste Intelligence Engine (`src/intelligence.js`)**
-  - *Branch:* `feat/issue-106-branch-5-ai-volume-prediction`
-  - *Goal:* Train dynamic moving averages on LocalStorage history to improve waste forecasts.
-- [ ] **Task 6: Compliance Audit Portal (`src/audit-portal.js`)**
-  - *Branch:* `feat/issue-106-branch-6-audit-trail`
-  - *Goal:* Build a premium municipal glassmorphism dashboard for public eco-compliance audits.
-- [ ] **Task 7: Composting Bio-Chemical Yield Optimizer (`src/yield-optimizer.js`)**
-  - *Branch:* `feat/issue-106-branch-7-yield-forecast`
-  - *Goal:* Build a plant composting calculator using custom chemical degradation formulas.
-- [ ] **Task 8: WebSocket Realtime Reconnection Protocol (`src/realtime-sync.js`)**
-  - *Branch:* `feat/issue-106-branch-8-realtime-socket`
-  - *Goal:* Develop exponential backoff retries and connection pings for tab state sharing.
-- [ ] **Task 9: AI Scanner & Camera Bounding-Boxes (`src/scanner.js` / `src/vision-scanner.js`)**
-  - *Branch:* `feat/issue-106-branch-9-pwa-offline`
-  - *Goal:* Implement MobileNet visual boundary overlays and filter bad capture frames.
-- [ ] **Task 10: Glassmorphism Design System & Transitions (`src/styles.css` / `index.html`)**
-  - *Branch:* `feat/issue-106-branch-10-glassmorphism-ux`
-  - *Goal:* Build responsive green-hued linear gradients, smooth hover scales, and CSS micro-animations.
+- [ ] **Task 1: Defensive Settings Type and Range Validation (`src/accessibility.js`)**
+  - *Branch:* `fix/issue-109-branch-1-load-settings-validation`
+  - *Goal:* Validate settings parsed from LocalStorage to prevent corrupted values from breaking accessibility controls.
+- [ ] **Task 2: Resilient Target Language Parameter Fallbacks (`src/i18n.js`)**
+  - *Branch:* `fix/issue-109-branch-2-translate-text-fallback`
+  - *Goal:* Safely fall back to the active language configuration if `lang` is omitted or invalid.
+- [ ] **Task 3: Safe Mass Bounds & Non-Negativity Checks (`src/yield-optimizer.js`)**
+  - *Branch:* `fix/issue-109-branch-3-yield-optimizer-mass-bounds`
+  - *Goal:* Introduce non-negativity checks and bounds limits on organic waste mass calculations.
+- [ ] **Task 4: Null Element Safety inside AI Volume History Processing (`src/intelligence.js`)**
+  - *Branch:* `fix/issue-109-branch-4-predict-volume-robustness`
+  - *Goal:* Guard mapping operators in `predictWasteVolume` to prevent TypeError runtime exceptions on invalid history entries.
+- [ ] **Task 5: High-Demand Zones Array Input Safety Guards (`src/intelligence.js`)**
+  - *Branch:* `fix/issue-109-branch-5-demand-zones-safety`
+  - *Goal:* Validate presence and type of providers and orders arrays in `getHighDemandZones`.
+- [ ] **Task 6: LocalStorage Offline Storage Queue Capacity Capping (`src/cloud-sync.js`)**
+  - *Branch:* `fix/issue-109-branch-6-offline-queue-cap`
+  - *Goal:* Proactively cap local offline queue size to 100 entries to avoid disk quota issues.
+- [ ] **Task 7: Robust Sanitize Account Default Schema Values (`src/cloud-sync.js`)**
+  - *Branch:* `fix/issue-109-branch-7-sanitize-account-fallbacks`
+  - *Goal:* Ensure correct default types are assigned to sanitized account documents matching standard cloud database requirements.
+- [ ] **Task 8: Storage Writer Parameter Safety Checks (`src/realtime-sync.js`)**
+  - *Branch:* `fix/issue-109-branch-8-realtime-badge-safety`
+  - *Goal:* Avoid crashes on invalid storage write operations with parameter type verification.
+- [ ] **Task 9: BroadcastChannel Thread Fault Isolation (`src/realtime-sync.js`)**
+  - *Branch:* `fix/issue-109-branch-9-broadcast-fault-isolation`
+  - *Goal:* Wrap the dynamic broad message receiver in a try-catch to prevent faulty event objects from crashing tab communications.
+- [ ] **Task 10: Fix Duplicate Declaration Syntax Error & Async Previews (`src/esg-reporter.js`)**
+  - *Branch:* `fix/issue-109-branch-10-esg-duplicate-hash-declaration`
+  - *Goal:* Resolve critical duplicated `reportHash` redeclaration compile syntax errors and sync rendering promises.
 
 ---
 
 ### 💎 Quality Standards (for "Exceptional" Label)
 To maintain the `quality:exceptional` label, all 10 module PRs must:
-- [ ] Include detailed JSDoc comments for all newly added functions.
-- [ ] Ensure 100% responsive styling with perfect dark/light contrast ratios.
+- [ ] Include detailed JSDoc comments for all newly added functions/parameters.
 - [ ] Run cleanly without triggering browser console warnings or runtime exceptions.
-- [ ] Implement smooth CSS animations/transitions for interactive states.
+- [ ] Implement smooth, defensive guards to prevent runtime crashes.
 
 ### ✅ Checklist
 - [ ] I am a GSSoC'24 contributor.
