@@ -340,11 +340,12 @@ export const CloudSync = {
      */
     sanitizeAccount: (account) => {
         const sanitized = {};
+        if (!account) account = {};
         ['id', 'role', 'name', 'org'].forEach(f => {
             sanitized[f] = account[f] != null ? String(account[f]) : '';
         });
         ['lat', 'lng', 'tokens', 'staked'].forEach(f => {
-            sanitized[f] = account[f] != null ? Number(account[f]) : 0;
+            sanitized[f] = account[f] != null && !isNaN(Number(account[f])) ? Number(account[f]) : 0;
         });
         return sanitized;
     },
