@@ -53,6 +53,9 @@ export const Intelligence = {
      * @returns {HighDemandZone[]}
      */
     getHighDemandZones: (providers, allOrders) => {
+        if (!providers || !Array.isArray(providers) || !allOrders || !Array.isArray(allOrders)) {
+            return [];
+        }
         return providers.map(p => {
             const providerOrders = allOrders.filter(o => o.providerId === p.id);
             const intensity = Math.min(providerOrders.length / 10, 1);
