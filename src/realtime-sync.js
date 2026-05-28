@@ -163,6 +163,7 @@ function setupFallbackChannel() {
 }
 
 function writeStorage(key, value, options = {}) {
+  if (!key || typeof key !== 'string') return;
   try {
     if (value === null || typeof value === 'undefined') {
       window.localStorage.removeItem(key);
