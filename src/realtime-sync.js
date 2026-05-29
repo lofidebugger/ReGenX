@@ -145,25 +145,20 @@ function setupFallbackChannel() {
   if (broadcastChannel || typeof window.BroadcastChannel !== 'function') return;
   broadcastChannel = new BroadcastChannel('regenx-realtime');
   broadcastChannel.onmessage = (event) => {
-    try {
-      const payload = event.data;
-      if (!payload || payload.sourceId === clientId) return;
-      if (payload.kind === 'snapshot' && payload.records) {
-        applyUpdates(Object.entries(payload.records).map(([key, value]) => ({ key, value, action: value === null ? 'remove' : 'set' })), { quiet: false });
-        return;
-      }
-      if (payload.kind === 'patch' && payload.updates) {
-        applyUpdates(payload.updates, { quiet: false });
-        if (payload.meta?.toast && window.showToast) window.showToast(payload.meta.toast);
-      }
-    } catch (err) {
-      console.warn('Realtime Broadcast message handler failed', err);
+    const payload = event.data;
+    if (!payload || payload.sourceId === clientId) return;
+    if (payload.kind === 'snapshot' && payload.records) {
+      applyUpdates(Object.entries(payload.records).map(([key, value]) => ({ key, value, action: value === null ? 'remove' : 'set' })), { quiet: false });
+      return;
+    }
+    if (payload.kind === 'patch' && payload.updates) {
+      applyUpdates(payload.updates, { quiet: false });
+      if (payload.meta?.toast && window.showToast) window.showToast(payload.meta.toast);
     }
   };
 }
 
 function writeStorage(key, value, options = {}) {
-  if (!key || typeof key !== 'string') return;
   try {
     if (value === null || typeof value === 'undefined') {
       window.localStorage.removeItem(key);
