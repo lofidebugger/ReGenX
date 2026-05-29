@@ -1,5 +1,6 @@
 
 import { Intelligence } from './intelligence.js';
+// CO2 Offset Calculation and Analytics Engine
 import { TrustProtocol } from './trust.js';
 import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
