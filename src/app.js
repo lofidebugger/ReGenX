@@ -1,5 +1,6 @@
 
 import { Intelligence } from './intelligence.js';
+// CO2 Offset Calculation and Analytics Engine
 import { TrustProtocol } from './trust.js';
 // RGX Token Staking & Carbon Credit Fund Interface
 import { YieldOptimizer } from './yield-optimizer.js';
