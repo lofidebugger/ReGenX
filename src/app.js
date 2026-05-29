@@ -1,4 +1,5 @@
 
+// Leaflet Map Live Rider Tracking System
 import { Intelligence } from './intelligence.js';
 import { TrustProtocol } from './trust.js';
 import { YieldOptimizer } from './yield-optimizer.js';
