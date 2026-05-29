@@ -8,7 +8,7 @@
 /**
  * @typedef {Object} PredictionResult
  * @property {number} expectedKg - Predicted weight in KG.
- * @property {('Low'|'Medium'|'High')} confidence - The statistical confidence scale.
+ * @property {string} confidence - Confidence level (Low/Med/High).
  * @property {string} trend - Upward/Downward trend.
  */
 
@@ -31,7 +31,7 @@ export const Intelligence = {
             return { expectedKg: 0, confidence: 'Low', trend: 'Neutral' };
         }
 
-        const weights = history.map(o => o && (o.actualKg || o.kg) || 0);
+        const weights = history.map(o => o.actualKg || o.kg || 0);
         const avg = weights.reduce((a, b) => a + b, 0) / weights.length;
         
         // Simple weighted moving average simulation
@@ -53,9 +53,6 @@ export const Intelligence = {
      * @returns {HighDemandZone[]}
      */
     getHighDemandZones: (providers, allOrders) => {
-        if (!providers || !Array.isArray(providers) || !allOrders || !Array.isArray(allOrders)) {
-            return [];
-        }
         return providers.map(p => {
             const providerOrders = allOrders.filter(o => o.providerId === p.id);
             const intensity = Math.min(providerOrders.length / 10, 1);
@@ -69,8 +66,8 @@ export const Intelligence = {
     },
 
     /**
-     * Generates a unique pseudo-random transaction hash for blockchain interactions.
-     * @returns {string} A 40-character hex string prefixed with '0x' (e.g. `0xabcd1234...`).
+     * Generates a unique transaction hash for "blockchain" interactions.
+     * @returns {string}
      */
     generateTxHash: () => {
         return '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
