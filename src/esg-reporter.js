@@ -58,8 +58,7 @@ export const ESGReporter = {
 
     /**
      * Persists the public audit registry in localStorage.
-     * @param {Array<Object>} records - Registry records to store.
-     * @returns {void}
+     * @param {Array<Object>} records - Registry records.
      */
     saveAuditRegistry: (records) => {
         try {
@@ -93,8 +92,7 @@ export const ESGReporter = {
             : 0;
 
         const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        // Use a static preview signature hash since DOM render is synchronous
-        const reportHash = '0x' + Array.from({ length: 40 }, () => 'f').join('');
+        const reportHash = ESGReporter.generateAuditHash();
 
         let qualityBadgeColor = 'badge-red';
         let qualityText = 'Needs Improvement';
@@ -231,7 +229,7 @@ export const ESGReporter = {
                                 <div style="text-align:center; margin-bottom:30px;">
                                     <h1 style="color:#0D9488; font-size:26px; margin:0 0 6px 0; font-family:'Space Grotesk',sans-serif; font-weight:800; letter-spacing:-1px;">ReGenX Protocol</h1>
                                     <h2 style="color:#64748B; font-size:15px; margin:0 0 10px 0; font-family:'Inter',sans-serif; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Environmental, Social, & Governance (ESG) Impact Profile</h2>
-                                    <p style="color:#94A3B8; font-size:11px; margin:0;">Attestation Date: ${dateStrFromTimestamp}</p>
+                                    <p style="color:#94A3B8; font-size:11px; margin:0;">Attestation Date: ${dateStr}</p>
                                 </div>
 
                                 <div style="margin-bottom:24px; padding:16px; border-left:4px solid #0D9488; background:#F8FAFC; border-radius:0 8px 8px 0;">
@@ -336,8 +334,7 @@ export const ESGReporter = {
 
     /**
      * Helper to return the currently tracked history for PDF export.
-     * Falls back to an empty array when no history has been rendered yet.
-     * @returns {Array<Object>} Currently loaded history array, or `[]` if none is set.
+     * @returns {Array<Object>} Currently loaded history array.
      */
     getCurrentHistory: () => {
         return ESGReporter._lastHistory || [];
@@ -358,12 +355,6 @@ export const ESGReporter = {
         // Calculate Metrics
         const totalKg = history.reduce((sum, o) => sum + (parseFloat(o.actualKg || o.kg) || 0), 0);
         const totalTokens = account.tokens || 0;
-        // Load BioScan history from localStorage
-        const scanHistory = JSON.parse(localStorage.getItem('regenx_scan_history') || '[]');
-        const avgOrganicPct = scanHistory.length
-            ? Math.round(scanHistory.reduce((s, r) => s + (r.organicPercentage || 0), 0) / scanHistory.length)
-            : 0;
-        const totalScans = scanHistory.length;
 
         // Per-order CO₂ calculation using waste-type-specific IPCC 2006 / GHG Protocol factors
         const co2Details = history.map(o => {
@@ -388,6 +379,7 @@ export const ESGReporter = {
               }, 0) / activeSegScores.length)
             : 0;
         
+        // Mock a cryptographic hash for "verifiability"
         
         const timestamp = Date.now();
         const reportPayload = {
@@ -401,22 +393,22 @@ export const ESGReporter = {
             timestamp
         };
 
-        let generatedReportHash;
+        let reportHash;
         try {
-            generatedReportHash = await ESGReporter.generateAuditHash(reportPayload);
+            reportHash = await ESGReporter.generateAuditHash(reportPayload);
         } catch (e) {
             console.error('Failed to generate audit hash:', e);
             if (window.showToast) window.showToast('⚠️ Failed to generate ESG verification hash.');
             return;
         }
-        const dateStrFromTimestamp = new Date(timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        const dateStr = new Date(timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
         // Save generated verification record to ReGenX Public Audit registry
         try {
             const registry = ESGReporter.loadAuditRegistry();
             registry.push({
                 ...reportPayload,
-                hash: generatedReportHash
+                hash: reportHash
             });
             ESGReporter.saveAuditRegistry(registry);
         } catch (e) {
@@ -439,7 +431,7 @@ export const ESGReporter = {
                 </div>
                 <div style="text-align:right;">
                     <div style="background:#F0FDF4; border:1px solid #DCFCE7; color:#16A34A; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; text-transform:uppercase; display:inline-block;">Verifiable ESG Audit</div>
-                    <p style="color:#94A3B8; font-size:11px; margin:6px 0 0 0;">Date: ${dateStrFromTimestamp}</p>
+                    <p style="color:#94A3B8; font-size:11px; margin:6px 0 0 0;">Date: ${dateStr}</p>
                 </div>
             </div>
 
@@ -473,13 +465,9 @@ export const ESGReporter = {
                     <div style="font-size:32px; font-weight:800; color:#2563EB; line-height:1.2;">${totalCO2.toLocaleString()}</div>
                     <div style="font-size:10px; color:#1D4ED8; font-weight:700; text-transform:uppercase; margin-top:4px;">Kg CO₂ Avoided</div>
                 </div>
-               <div style="flex:1; text-align:center; padding:20px; background:#FEFCE8; border-radius:12px; border:1px solid #FEF9C3;">
+                <div style="flex:1; text-align:center; padding:20px; background:#FEFCE8; border-radius:12px; border:1px solid #FEF9C3;">
                     <div style="font-size:32px; font-weight:800; color:#CA8A04; line-height:1.2;">${avgSegScore}%</div>
                     <div style="font-size:10px; color:#A16207; font-weight:700; text-transform:uppercase; margin-top:4px;">Segregation Index</div>
-                </div>
-                <div style="flex:1; text-align:center; padding:20px; background:#F5F3FF; border-radius:12px; border:1px solid #EDE9FE;">
-                    <div style="font-size:32px; font-weight:800; color:#7C3AED; line-height:1.2;">${totalScans}</div>
-                    <div style="font-size:10px; color:#6D28D9; font-weight:700; text-transform:uppercase; margin-top:4px;">BioScans (${avgOrganicPct}% Avg Organic)</div>
                 </div>
             </div>
 
@@ -543,11 +531,11 @@ export const ESGReporter = {
             </p>
             <div style="margin-top:40px; text-align:center; font-size:11px; color:#94A3B8;">
                 <p>This document is digitally generated and verifiable via the ReGenX smart ledger.</p>
-                <p style="font-family:monospace; background:#F1F5F9; display:inline-block; padding:4px 8px; border-radius:4px;">Signature Hash (SHA-256): ${generatedReportHash}</p>
+                <p style="font-family:monospace; background:#F1F5F9; display:inline-block; padding:4px 8px; border-radius:4px;">Signature Hash (SHA-256): ${reportHash}</p>
             <!-- Cryptographic Ledger Footer -->
             <div style="margin-top:60px; text-align:center; font-size:10px; color:#94A3B8; border-top:1px solid #E2E8F0; padding-top:20px;">
                 <p style="margin:0 0 6px 0;">This ESG report was digitally compiled and is cryptographically verifiable via ReGenX zero-trust ledger API.</p>
-                <p style="font-family:monospace; background:#F8FAFC; display:inline-block; padding:6px 12px; border-radius:6px; border:1px solid #E2E8F0; color:#475569; margin:0;">Attestation Signature Hash (SHA-256): ${generatedReportHash}</p>
+                <p style="font-family:monospace; background:#F8FAFC; display:inline-block; padding:6px 12px; border-radius:6px; border:1px solid #E2E8F0; color:#475569; margin:0;">Attestation Signature Hash (SHA-256): ${reportHash}</p>
                 <p style="margin:10px 0 0 0; font-size:9px; color:#CBD5E1;">© 2026 ReGenX Protocol Inc. All rights reserved.</p>
             </div>
         `;
