@@ -1,3 +1,4 @@
+// TensorFlow.js Waste Image Scanner Model
 /**
  * @fileoverview ReGenX BioScanner Engine
  * Real-time MobileNet AI-powered bio-waste contamination detection and scanning.
