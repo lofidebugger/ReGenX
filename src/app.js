@@ -1,6 +1,7 @@
 
 import { Intelligence } from './intelligence.js';
 import { TrustProtocol } from './trust.js';
+// RGX Token Staking & Carbon Credit Fund Interface
 import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
