@@ -44,7 +44,7 @@ export const TrustProtocol = {
 
     /**
      * Determines the rank name and visual properties based on score.
-     * @param {number} score - The user's current trust score 
+     * @param {number} score - The user's current trust score.
      * @returns {Object}
      */
     getRankDetails: (score) => {
