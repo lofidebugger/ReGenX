@@ -215,7 +215,7 @@ export const CloudSync = {
         if (!CloudSync.client || !CloudSync.config) return;
 
         const channel = `databases.${CloudSync.config.databaseId}.collections.${CloudSync.config.ordersCollectionId}.documents`;
-        console.log(`📡 Subscribed to Appwrite Realtime: ${channel}`);
+        console.debug(`📡 Subscribed to Appwrite Realtime: ${channel}`);
         
         try {
             CloudSync.unsubscribe = CloudSync.client.subscribe(channel, response => {
