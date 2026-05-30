@@ -24,7 +24,7 @@ const QUALITY_LEDGER_KEY = STORAGE_KEY_PREFIX + "quality-ledger";
 const AUTOMATION_PIPELINE_KEY = STORAGE_KEY_PREFIX + "automation-pipeline";
 const SESSION_STATE_KEY = STORAGE_KEY_PREFIX + 'active-session';
 
-console.log('APP JS LOADED');
+console.debug('APP JS loaded');
 
 function saveActiveSession(accountId, viewId) {
   try {
@@ -5346,7 +5346,7 @@ if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('/service-worker.js');
 
-      console.log('Service Worker registered:', registration.scope);
+      console.info('Service Worker registered:', registration.scope);
     } catch (error) {
       console.error('Service Worker registration failed:', error);
     }
