@@ -441,7 +441,7 @@ export const CloudSync = {
             const filtered = queue.filter(item => item.key !== key);
             filtered.push({ key, data, ts: Date.now() });
             localStorage.setItem('regenx-offline-queue', JSON.stringify(filtered));
-            console.log(`[CloudSync] Queued offline write for key: ${key}`);
+            console.debug(`[CloudSync] Queued offline write for key: ${key}`);
         } catch (e) {
             console.warn('[CloudSync] Failed to queue offline write:', e);
         }
