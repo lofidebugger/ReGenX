@@ -219,7 +219,7 @@ export const CloudSync = {
         
         try {
             CloudSync.unsubscribe = CloudSync.client.subscribe(channel, response => {
-                console.log("⚡ Appwrite Realtime Event Received:", response);
+                console.debug("⚡ Appwrite Realtime Event Received:", response);
                 
                 const syncedOrder = response.payload;
                 if (!syncedOrder || !syncedOrder.id) return;
