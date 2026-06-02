@@ -81,6 +81,11 @@ window.BioScanner = (function () {
   }
 
   // ── CLASSIFICATION ENGINE ─────────────────────────────────────────────────────
+  /**
+   * Maps MobileNet model predictions to ReGenX waste category labels.
+   * @param {Array<{className: string, probability: number}>} predictions - Top-K MobileNet predictions.
+   * @returns {{ wasteType: string, confidence: number, isOrganic: boolean, biogas: number }} Classification result.
+   */
   function classifyResult(predictions) {
     let organicScore = 0;
     let inorganicScore = 0;
