@@ -281,6 +281,13 @@ export const AccessibilityManager = {
      * @param {string} text - The text to read out.
      * @param {number} [rate=1.0] - The speech rate scaling factor.
      */
+    /**
+     * Speaks the given text aloud using the Web Speech API.
+     * Silently no-ops when TTS is disabled or the browser lacks SpeechSynthesis support.
+     * @param {string} text - The text string to synthesise.
+     * @param {number} [rate=1.0] - Speech rate multiplier (0.1 to 10, default 1.0).
+     * @returns {void}
+     */
     speak: (text, rate = 1.0) => {
         if (!window.speechSynthesis) return;
         AccessibilityManager.stopSpeaking();
