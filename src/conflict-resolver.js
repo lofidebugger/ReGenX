@@ -10,6 +10,13 @@
  * @param {Object} serverData - Current server state
  * @returns {Object} - Resolved action to apply
  */
+/**
+ * Resolves an offline/online data conflict using a server-wins merge strategy.
+ * Local actions are applied on top of server data where no direct field clash exists.
+ * @param {Object} localAction - The pending local action with type and payload fields.
+ * @param {Object} serverData - The authoritative server-side data snapshot.
+ * @returns {{ resolved: Object, conflict: boolean }} Merged result and conflict flag.
+ */
 export function resolveConflict(localAction, serverData) {
   // If no server data exists, local action wins
   if (!serverData) {
