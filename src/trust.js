@@ -47,6 +47,11 @@ export const TrustProtocol = {
      * @param {number} score - The user's current trust score.
      * @returns {Object}
      */
+    /**
+     * Returns the rank tier details for a given trust score.
+     * @param {number} score - The contributor's current trust score (0–1000).
+     * @returns {{ rank: string, badge: string, color: string, minScore: number }} Rank details object.
+     */
     getRankDetails: (score) => {
         if (score >= 90) return { name: TrustProtocol.RANKS.DIAMOND, color: '#3B82F6', multiplier: 1.5, icon: '💎' };
         if (score >= 75) return { name: TrustProtocol.RANKS.GOLD, color: '#F59E0B', multiplier: 1.25, icon: '🏆' };
