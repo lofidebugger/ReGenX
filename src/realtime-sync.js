@@ -42,6 +42,12 @@ function inferRoomsFromKey(key) {
   return [NETWORK_ROOM];
 }
 
+/**
+ * Safely parses a JSON string received from the realtime sync channel.
+ * Returns null on parse failure rather than throwing to prevent channel crashes.
+ * @param {string} value - The raw JSON string to parse.
+ * @returns {Object|null} Parsed object, or null if the input is invalid JSON.
+ */
 function parsePayload(value) {
   if (value === null || typeof value === 'undefined') return null;
   return value;
