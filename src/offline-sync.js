@@ -88,6 +88,10 @@ export function queueOfflineAction(type, payload) {
  * Get all pending actions from IndexedDB
  * @returns {Promise<Array>}
  */
+/**
+ * Retrieves all pending offline actions from IndexedDB awaiting background sync.
+ * @returns {Promise<Array<{id: string, type: string, payload: Object, timestamp: number}>>} Ordered list of pending actions.
+ */
 export function getPendingActions() {
   return new Promise((resolve, reject) => {
     if (!db) { resolve([]); return; }
