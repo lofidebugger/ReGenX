@@ -121,6 +121,12 @@ export const RouteOptimizer = {
     /**
      * Calculates total distance of a given tour sequence.
      */
+    /**
+     * Calculates the total travel distance of a given route using a precomputed distance matrix.
+     * @param {Array<Object>} tour - Ordered array of stop objects.
+     * @param {number[][]} matrix - Precomputed pairwise distance matrix in kilometres.
+     * @returns {number} Total distance of the tour in kilometres.
+     */
     getTourDistance: (tour, matrix) => {
         let dist = 0;
         for (let i = 0; i < tour.length - 1; i++) {
