@@ -47,6 +47,14 @@ export function resolveConflict(localAction, serverData) {
  * @param {Object} payload - Action payload to compare
  * @returns {boolean}
  */
+/**
+ * Checks whether an identical action already exists in the pending offline queue.
+ * Used to prevent duplicate writes during intermittent connectivity.
+ * @param {Array<Object>} pendingActions - Current list of queued offline actions.
+ * @param {string} type - The action type string to check for (e.g. 'ORDER_UPDATE').
+ * @param {Object} payload - The action payload to match against existing entries.
+ * @returns {boolean} True if an equivalent action already exists in the queue.
+ */
 export function isDuplicate(pendingActions, type, payload) {
   return pendingActions.some(
     (action) =>
