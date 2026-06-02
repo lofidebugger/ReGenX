@@ -296,6 +296,13 @@ export const CloudSync = {
      * @param {Object} payload - Data to sync.
      * @returns {Promise<void>}
      */
+    /**
+     * Writes a sanitised document to the specified Firestore collection.
+     * Falls back to the offline queue when connectivity is unavailable.
+     * @param {string} collection - Firestore collection path (e.g. 'orders', 'accounts').
+     * @param {Object} payload - The document data to write (will be sanitised before upload).
+     * @returns {Promise<void>}
+     */
     pushDocument: async (collection, payload) => {
         if (!CloudSync.isLive || !CloudSync.databases || !CloudSync.config) return;
         
