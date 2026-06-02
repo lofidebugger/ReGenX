@@ -53,6 +53,12 @@ export function isDuplicate(pendingActions, type, payload) {
  * @param {Array} actions - All pending GPS actions
  * @returns {Array} - Deduplicated actions (latest GPS only)
  */
+/**
+ * Deduplicates and merges GPS location update actions from the offline queue.
+ * Keeps only the most recent update per rider, discarding stale duplicates.
+ * @param {Array<{type: string, payload: {riderId: string, lat: number, lng: number}}>} actions - Offline action queue.
+ * @returns {Array<Object>} Deduplicated action list with latest GPS per rider retained.
+ */
 export function mergeGPSUpdates(actions) {
   const gpsActions = actions.filter((a) => a.type === 'gps');
   const otherActions = actions.filter((a) => a.type !== 'gps');
