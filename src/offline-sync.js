@@ -200,6 +200,11 @@ async function handleRetry(action) {
  * Update sync status UI banner
  * @param {'pending'|'syncing'|'synced'|'retry-failed'} status
  */
+/**
+ * Updates the offline sync status indicator element in the UI.
+ * @param {'synced' | 'pending' | 'syncing' | 'error'} status - The current sync state to display.
+ * @returns {void}
+ */
 export function updateSyncUI(status) {
   let banner = document.getElementById('sync-status-banner');
 
