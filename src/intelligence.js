@@ -26,6 +26,11 @@ export const Intelligence = {
      * @param {Array} history - Array of completed order objects.
      * @returns {PredictionResult}
      */
+    /**
+     * Predicts future bio-waste volume using a weighted moving average of history.
+     * @param {Array<Object>} history - Array of past waste intake records with actualKg/kg fields.
+     * @returns {number} Predicted waste volume in kilograms for the next day.
+     */
     predictWasteVolume: (history) => {
         if (!history || history.length === 0) {
             return { expectedKg: 0, confidence: 'Low', trend: 'Neutral' };
