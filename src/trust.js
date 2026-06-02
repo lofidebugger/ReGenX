@@ -141,6 +141,14 @@ export const TrustProtocol = {
      * @param {(lat1:number,lng1:number,lat2:number,lng2:number)=>number} distanceFn - Distance function.
      * @returns {{score:number, maxGapMins:number, maxDeviationKm:number, anomalies:{timeGap:boolean,routeDeviation:boolean}}}
      */
+    /**
+     * Calculates a 0–100 GPS integrity score for a rider session.
+     * Higher scores indicate minimal route deviation and trustworthy behaviour.
+     * @param {Array<Object>} events - GPS events from the rider's session.
+     * @param {Array<Object>} route - Assigned route waypoints with lat/lng.
+     * @param {Function} distanceFn - Distance function for two coordinate objects.
+     * @returns {number} Integrity score in the range [0, 100].
+     */
     calculateIntegrityScore: (events, route, distanceFn) => {
         const analysis = TrustProtocol.analyzeIntegrity(events, route, distanceFn);
         let score = 100;
