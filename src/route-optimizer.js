@@ -111,6 +111,13 @@ export const RouteOptimizer = {
     /**
      * Performs a 2-opt swap by reversing the segment between index i and j.
      */
+    /**
+     * Performs a 2-opt swap by reversing the segment of a tour between indices i and j.
+     * @param {Array<Object>} tour - The current ordered tour array.
+     * @param {number} i - Start index of the segment to reverse.
+     * @param {number} j - End index of the segment to reverse.
+     * @returns {Array<Object>} New tour array with the segment reversed.
+     */
     twoOptSwap: (tour, i, j) => {
         const newTour = tour.slice(0, i);
         const reversedSegment = tour.slice(i, j + 1).reverse();
