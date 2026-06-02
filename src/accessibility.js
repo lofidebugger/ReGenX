@@ -248,6 +248,12 @@ export const AccessibilityManager = {
      * Scales the font size.
      * @param {number} delta - Scale change (+0.1 or -0.1).
      */
+    /**
+     * Adjusts the global font scale by the given delta value.
+     * The resulting scale is clamped to the valid range [0.8, 1.5].
+     * @param {number} delta - Amount to add to the current scale (e.g. 0.1 to increase, -0.1 to decrease).
+     * @returns {void}
+     */
     changeFontScale: (delta) => {
         const next = Math.max(0.8, Math.min(1.5, AccessibilityManager.state.fontScale + delta));
         AccessibilityManager.state.fontScale = parseFloat(next.toFixed(1));
