@@ -60,6 +60,12 @@ export const TrustProtocol = {
      * @param {number} score 
      * @returns {number}
      */
+    /**
+     * Calculates a trust-weighted token reward amount.
+     * @param {number} baseAmount - The base reward amount in $RGX tokens.
+     * @param {number} score - The contributor's current trust score (0–1000).
+     * @returns {number} Final reward amount after applying the trust multiplier.
+     */
     calculateReward: (baseAmount, score) => {
         const { multiplier } = TrustProtocol.getRankDetails(score);
         return Math.round(baseAmount * multiplier);
