@@ -13,6 +13,11 @@ let db = null;
  * Initialize IndexedDB for offline storage
  * @returns {Promise<IDBDatabase>}
  */
+/**
+ * Initialises the IndexedDB offline action store for ReGenX.
+ * Creates the 'offline-actions' object store with an auto-incrementing key if it does not exist.
+ * @returns {Promise<IDBDatabase>} Resolves with the opened IDBDatabase instance.
+ */
 export function initOfflineDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
