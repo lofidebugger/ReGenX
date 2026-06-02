@@ -47,6 +47,13 @@ function parsePayload(value) {
   return value;
 }
 
+/**
+ * Applies a batch of storage updates received from the realtime sync channel.
+ * @param {Array<{key: string, value: *, action: string}>} [updates=[]] - Update records to apply.
+ * @param {Object} [options={}] - Processing flags.
+ * @param {boolean} [options.quiet=false] - Suppress toast notifications when true.
+ * @returns {void}
+ */
 function applyUpdates(updates = [], options = {}) {
   updates.forEach((update) => {
     if (!update || !update.key) return;
