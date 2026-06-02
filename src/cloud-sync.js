@@ -459,6 +459,11 @@ export const CloudSync = {
      * Called when the app comes back online.
      * @returns {Promise<void>}
      */
+    /**
+     * Flushes all pending offline writes to the cloud when connectivity is restored.
+     * Processes each queued item in FIFO order and clears the queue on success.
+     * @returns {Promise<void>}
+     */
     flushOfflineQueue: async () => {
         if (!CloudSync.isLive) return;
         try {
