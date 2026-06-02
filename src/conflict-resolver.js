@@ -81,6 +81,12 @@ export function mergeGPSUpdates(actions) {
  * @param {Object} payload - Action data
  * @returns {boolean}
  */
+/**
+ * Validates an offline action's payload against the required schema for its type.
+ * @param {string} type - The action type (e.g. 'ORDER_UPDATE', 'GPS_UPDATE').
+ * @param {Object} payload - The action payload to validate.
+ * @returns {{ valid: boolean, errors: string[] }} Validation result with any error messages.
+ */
 export function validateAction(type, payload) {
   const validTypes = ['dispatch', 'pickup', 'gps', 'scan', 'reward', 'plant'];
 
