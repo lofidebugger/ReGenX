@@ -52,6 +52,12 @@ export const Intelligence = {
      * @param {Array} allOrders - Array of all orders.
      * @returns {HighDemandZone[]}
      */
+    /**
+     * Identifies provider zones with the highest organic waste demand.
+     * @param {Array<Object>} providers - List of registered provider accounts with lat/lng.
+     * @param {Array<Object>} allOrders - All active orders in the system.
+     * @returns {Array<Object>} Providers sorted by demand score descending.
+     */
     getHighDemandZones: (providers, allOrders) => {
         return providers.map(p => {
             const providerOrders = allOrders.filter(o => o.providerId === p.id);
