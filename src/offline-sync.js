@@ -57,6 +57,13 @@ function generateUUID() {
  * @param {Object} payload - Action data
  * @returns {Promise<string>} - UUID of queued action
  */
+/**
+ * Persists an offline action to IndexedDB for background sync when connectivity is restored.
+ * Assigns a UUID and timestamp to each action before storage.
+ * @param {string} type - The action type identifier (e.g. 'ORDER_UPDATE', 'GPS_UPDATE').
+ * @param {Object} payload - The data payload associated with the action.
+ * @returns {Promise<void>}
+ */
 export function queueOfflineAction(type, payload) {
   return new Promise((resolve, reject) => {
     if (!db) { reject(new Error('DB not initialized')); return; }
