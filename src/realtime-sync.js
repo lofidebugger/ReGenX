@@ -165,6 +165,14 @@ function setupFallbackChannel() {
   };
 }
 
+/**
+ * Writes a value to LocalStorage and broadcasts the change to other open tabs.
+ * @param {string} key - The LocalStorage key to write.
+ * @param {*} value - The value to serialise and store.
+ * @param {Object} [options={}] - Options object.
+ * @param {boolean} [options.silent=false] - Skip broadcasting when true.
+ * @returns {void}
+ */
 function writeStorage(key, value, options = {}) {
   try {
     if (value === null || typeof value === 'undefined') {
