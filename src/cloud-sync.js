@@ -435,6 +435,13 @@ export const CloudSync = {
      * @param {string} key - Data key (e.g. 'ord:abc123').
      * @param {Object} data - Data payload.
      */
+    /**
+     * Enqueues a write operation for deferred cloud sync when offline.
+     * Caps the queue at 100 entries to prevent LocalStorage quota exhaustion.
+     * @param {string} key - The storage key to write to upon reconnect.
+     * @param {*} data - The data payload to persist.
+     * @returns {void}
+     */
     queueOfflineWrite: (key, data) => {
         try {
             const queue = JSON.parse(localStorage.getItem('regenx-offline-queue') || '[]');
