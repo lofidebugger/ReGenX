@@ -266,6 +266,12 @@ export const CloudSync = {
      * @param {Object} doc - Raw order document.
      * @returns {Object} Sanitized object ready for Appwrite.
      */
+    /**
+     * Strips internal and private fields from a document before cloud upload.
+     * Removes underscore-prefixed keys and non-serialisable values (functions, undefined).
+     * @param {Object} doc - The raw document object to sanitise.
+     * @returns {Object} A cleaned copy safe for Firestore/cloud storage.
+     */
     sanitizeDoc: (doc) => {
         const sanitized = {};
         
