@@ -237,7 +237,7 @@ export const VisionScanner = {
     /**
      * Captures a frame, checks for low light, and simulates AI analysis.
      */
-    captureAndAnalyze: (targetInputId) => {
+    captureAndAnalyze: async (targetInputId) => {
         if (VisionScanner.isLowLight) {
             console.warn("Inference paused: Low light conditions detected.");
             return; // Prevent TensorFlow inference when noisy
@@ -260,23 +260,52 @@ export const VisionScanner = {
             btn.style.opacity = '0.8';
         }
 
-        setTimeout(() => {
-            // Algorithmic Mock: Generate a score between 60 and 95
-            const simulatedScore = Math.floor(Math.random() * (95 - 60 + 1) + 60);
-            
+        try {
+            if (!window.BioScanner) throw new Error('BioScanner not available');
+
+            const result = await window.BioScanner.performScan(canvas);
+
+            if (!result || result.confidence == null) {
+                throw new Error('Scan result unavailable');
+            }
+
+            if (result.confidence < 30) {
+                VisionScanner.closeScanner();
+                if (window.showToast) {
+                    window.showToast('⚠️ AI confidence too low. Please try again in better light.');
+                }
+                return;
+            }
+
+            if (!result.accepted) {
+                VisionScanner.closeScanner();
+                if (window.showToast) {
+                    window.showToast('⚠️ Non-organic waste detected. Segregation score not applied.');
+                }
+                return;
+            }
+
+            const score = result.organicPercent;
+
             // Set the value in the target input
             const targetEl = document.getElementById(targetInputId);
             if (targetEl) {
-                targetEl.value = simulatedScore;
+                targetEl.value = score;
                 targetEl.dispatchEvent(new Event('input', { bubbles: true }));
             }
 
             // Close scanner and notify
             VisionScanner.closeScanner();
             if (window.showToast) {
-                window.showToast(`✓ AI Scan Complete: Segregation Score ${simulatedScore}/100`);
+                window.showToast(`✓ AI Scan Complete: Segregation Score ${score}/100`);
             }
-        }, 1500);
+        } catch (err) {
+            console.error("AI Vision Scanner error:", err);
+            VisionScanner.closeScanner();
+            if (window.showToast) {
+                window.showToast('⚠️ AI scan failed. Please try again or enter score manually.');
+            }
+        }
     },
 
     /**
