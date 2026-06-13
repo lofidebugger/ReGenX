@@ -171,24 +171,27 @@ export async function syncPendingActions() {
  * @returns {Promise<void>}
  */
 async function processAction(action) {
-  // Replace with actual API endpoints per action type
-  const endpoints = {
-    dispatch: '/api/dispatch',
-    pickup: '/api/pickup',
-    gps: '/api/location',
-    scan: '/api/scan',
-    reward: '/api/rewards'
-  };
+  if (!window.CloudSync || !window.CloudSync.isLive) {
+    throw new Error('[OfflineSync] CloudSync not available or not live');
+  }
 
-  const url = endpoints[action.type] || '/api/sync';
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(action.payload)
-  });
-
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  switch (action.type) {
+    case 'dispatch':
+    case 'pickup':
+    case 'scan':
+    case 'plant':
+      await window.CloudSync.pushDocument(window.CloudSync.config.ordersCollectionId, action.payload);
+      break;
+    case 'reward':
+      await window.CloudSync.pushAccount(action.payload);
+      break;
+    case 'gps':
+      window.CloudSync.queueOfflineWrite('gps:' + action.payload.riderId, action.payload);
+      break;
+    default:
+      console.error(`[OfflineSync] Unknown action type: ${action.type} (${action.id})`);
+      throw new Error(`Unknown action type: ${action.type}`);
+  }
 }
 
 /**

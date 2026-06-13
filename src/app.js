@@ -12,6 +12,7 @@ import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
 import { ESGReporter } from './esg-reporter.js';
 import { AccessibilityManager } from './accessibility.js';
+import { initOfflineDB, setupNetworkListeners } from './offline-sync.js';
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
 const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
@@ -5208,6 +5209,7 @@ switchAuthTab('login');
 // ── Initialize Appwrite Cloud Sync Engine ──
 setTimeout(() => { ReGenXRealtime?.init(); ReGenXRealtime?.requestSnapshot?.(); }, 1000);
 setTimeout(() => { if (window.CloudSync) window.CloudSync.init(); }, 1000);
+initOfflineDB().then(() => { setupNetworkListeners(); }).catch(err => console.error('[OfflineSync] Failed to initialize:', err));
 
 // Expose module-scoped functions to global scope for inline HTML handlers
 window.doRegister = doRegister;
